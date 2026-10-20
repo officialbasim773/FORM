@@ -318,21 +318,17 @@ function BookingExample() {
     </div>
   );
 }
-export default function LandingExamples() {
+export default function LandingExamples({ start }: { start: string }) {
   const [kind, setKind] = useState<"form" | "appointment">("form"),
     [version, setVersion] = useState(0);
   return (
     <section id="examples" className="landing-section real-examples">
       <div className="landing-section-head">
-        <span className="eyebrow">EXPERIENCE IT AS YOUR CUSTOMER</span>
-        <h2>
-          Try a form.
-          <br />
-          Book a little time.
-        </h2>
+        <span className="eyebrow">TRY IT BEFORE YOU SIGN UP</span>
+        <h2>See what your customers will see.</h2>
         <p>
-          Two separate experiences, ready to explore. Complete a project enquiry
-          or walk through an appointment request.
+          Try a real form or explore a booking request. No account needed.
+          Nothing you enter is saved.
         </p>
       </div>
       <div
@@ -421,6 +417,15 @@ export default function LandingExamples() {
             )}
           </div>
         </div>
+      </div>
+      <div className="mk-demo-next">
+        <div>
+          <strong>Ready to make it yours?</strong>
+          <p>Build your own form and share it when you’re ready.</p>
+        </div>
+        <a className="mk-button" href={start}>
+          Make it yours <ArrowRight size={17} />
+        </a>
       </div>
     </section>
   );

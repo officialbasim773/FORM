@@ -3,8 +3,16 @@
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
-export function SignInAction({ returnTo }: { returnTo: string }) {
-  const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">("sign-in");
+export function SignInAction({
+  returnTo,
+  initialMode = "sign-in",
+}: {
+  returnTo: string;
+  initialMode?: "sign-in" | "sign-up";
+}) {
+  const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">(
+    initialMode,
+  );
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,6 +21,20 @@ export function SignInAction({ returnTo }: { returnTo: string }) {
   const [busy, setBusy] = useState(false);
   return (
     <>
+      <h1>
+        {mode === "sign-up"
+          ? "Create your free FormChat account"
+          : mode === "forgot"
+            ? "Reset your password"
+            : "Sign in to FormChat"}
+      </h1>
+      <p>
+        {mode === "sign-up"
+          ? "Start with a free workspace. No credit card needed. We’ll email you a verification link."
+          : mode === "forgot"
+            ? "Enter your email and we’ll send you a reset link."
+            : "Use the verified email address associated with your business or team invitation."}
+      </p>
       <form
         className="auth-form"
         onSubmit={async (event) => {
@@ -27,7 +49,9 @@ export function SignInAction({ returnTo }: { returnTo: string }) {
                 redirectTo: "/reset-password",
               });
               if (result.error) throw new Error(result.error.message);
-              setNotice("If this address has an account, a reset link is on its way.");
+              setNotice(
+                "If this address has an account, a reset link is on its way.",
+              );
             } else if (mode === "sign-up") {
               const result = await authClient.signUp.email({
                 name,
@@ -36,7 +60,9 @@ export function SignInAction({ returnTo }: { returnTo: string }) {
                 callbackURL: "/sign-in?verified=1",
               });
               if (result.error) throw new Error(result.error.message);
-              setNotice("Check your email for a verification link, then sign in.");
+              setNotice(
+                "Check your email for a verification link, then sign in.",
+              );
             } else {
               const result = await authClient.signIn.email({
                 email,
@@ -47,7 +73,9 @@ export function SignInAction({ returnTo }: { returnTo: string }) {
               window.location.assign(returnTo);
             }
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Authentication failed.");
+            setError(
+              cause instanceof Error ? cause.message : "Authentication failed.",
+            );
           } finally {
             setBusy(false);
           }
@@ -56,29 +84,95 @@ export function SignInAction({ returnTo }: { returnTo: string }) {
         {mode === "sign-up" && (
           <label>
             Name
-            <input required autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} />
+            <input
+              required
+              autoComplete="name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </label>
         )}
         <label>
           Email
-          <input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <input
+            required
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
         </label>
         {mode !== "forgot" && (
           <label>
             Password
-            <input required type="password" minLength={8} autoComplete={mode === "sign-up" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} />
+            <input
+              required
+              type="password"
+              minLength={8}
+              autoComplete={
+                mode === "sign-up" ? "new-password" : "current-password"
+              }
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
           </label>
         )}
         <button className="btn primary" disabled={busy} type="submit">
-          {busy ? "Please wait…" : mode === "sign-up" ? "Create account" : mode === "forgot" ? "Send reset link" : "Sign in"}
+          {busy
+            ? "Please wait…"
+            : mode === "sign-up"
+              ? "Create account"
+              : mode === "forgot"
+                ? "Send reset link"
+                : "Sign in"}
         </button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
       {notice && <p role="status">{notice}</p>}
       <div>
-        {mode !== "sign-in" && <button className="text-btn" type="button" onClick={() => { setMode("sign-in"); setError(""); setNotice(""); }}>Sign in</button>}
-        {mode !== "sign-up" && <button className="text-btn" type="button" onClick={() => { setMode("sign-up"); setError(""); setNotice(""); }}>Create account</button>}
-        {mode !== "forgot" && <button className="text-btn" type="button" onClick={() => { setMode("forgot"); setError(""); setNotice(""); }}>Forgot password?</button>}
+        {mode !== "sign-in" && (
+          <button
+            className="text-btn"
+            type="button"
+            onClick={() => {
+              setMode("sign-in");
+              setError("");
+              setNotice("");
+            }}
+          >
+            Sign in
+          </button>
+        )}
+        {mode !== "sign-up" && (
+          <button
+            className="text-btn"
+            type="button"
+            onClick={() => {
+              setMode("sign-up");
+              setError("");
+              setNotice("");
+            }}
+          >
+            Create account
+          </button>
+        )}
+        {mode !== "forgot" && (
+          <button
+            className="text-btn"
+            type="button"
+            onClick={() => {
+              setMode("forgot");
+              setError("");
+              setNotice("");
+            }}
+          >
+            Forgot password?
+          </button>
+        )}
       </div>
     </>
   );
@@ -89,21 +183,54 @@ export function ResetPasswordAction({ token }: { token: string }) {
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (!token) return <p className="error">This reset link is invalid. Request a new one from the sign-in page.</p>;
-  if (done) return <p>Password updated. <a href="/sign-in">Sign in</a>.</p>;
+  if (!token)
+    return (
+      <p className="error">
+        This reset link is invalid. Request a new one from the sign-in page.
+      </p>
+    );
+  if (done)
+    return (
+      <p>
+        Password updated. <a href="/sign-in">Sign in</a>.
+      </p>
+    );
   return (
-    <form className="auth-form" onSubmit={async (event) => {
-      event.preventDefault();
-      setBusy(true);
-      setError("");
-      const result = await authClient.resetPassword({ token, newPassword: password });
-      if (result.error) setError(result.error.message || "Could not reset password.");
-      else setDone(true);
-      setBusy(false);
-    }}>
-      <label>New password<input required type="password" minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-      <button className="btn primary" type="submit" disabled={busy}>{busy ? "Updating…" : "Update password"}</button>
-      {error && <p className="error" role="alert">{error}</p>}
+    <form
+      className="auth-form"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError("");
+        const result = await authClient.resetPassword({
+          token,
+          newPassword: password,
+        });
+        if (result.error)
+          setError(result.error.message || "Could not reset password.");
+        else setDone(true);
+        setBusy(false);
+      }}
+    >
+      <label>
+        New password
+        <input
+          required
+          type="password"
+          minLength={8}
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+      </label>
+      <button className="btn primary" type="submit" disabled={busy}>
+        {busy ? "Updating…" : "Update password"}
+      </button>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
     </form>
   );
 }
