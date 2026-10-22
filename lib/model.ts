@@ -42,11 +42,39 @@ export type TeamMember = {
   status: "invited" | "active" | "revoked";
   expires_at?: string;
 };
+const calendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (v) =>
+      !isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v,
+    "Choose a valid calendar date.",
+  );
+export const answerRulesSchema = z
+  .object({
+    minLength: z.number().int().min(0).max(4000).optional(),
+    maxLength: z.number().int().min(1).max(4000).optional(),
+    min: z.number().finite().min(-1e12).max(1e12).optional(),
+    max: z.number().finite().min(-1e12).max(1e12).optional(),
+    minDate: calendarDate.optional(),
+    maxDate: calendarDate.optional(),
+    minSelections: z.number().int().min(0).max(30).optional(),
+    maxSelections: z.number().int().min(1).max(30).optional(),
+    ratingMax: z.union([z.literal(5), z.literal(10)]).optional(),
+  })
+  .strict();
+export const completionSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500),
+  autoOpenWhatsApp: z.boolean(),
+});
 export const questionSchema = z
   .object({
     id,
     label: z.string().trim().min(1).max(180),
     description: z.string().max(400).optional(),
+    placeholder: z.string().max(200).optional(),
+    validation: answerRulesSchema.optional(),
     choiceStyle: z.enum(["text", "pictures"]).optional(),
     choiceImageFit: z.enum(["cover", "contain"]).optional(),
     media: formMediaSchema.optional(),
@@ -64,6 +92,51 @@ export const questionSchema = z
     options: z.array(z.string().trim().min(1).max(100)).max(30).default([]),
   })
   .superRefine((q, c) => {
+    const rules = q.validation || {};
+    const allowed = [
+      "short text",
+      "long text",
+      "address",
+      "email",
+      "phone",
+      "url",
+    ].includes(q.type)
+      ? ["minLength", "maxLength"]
+      : q.type === "number"
+        ? ["min", "max"]
+        : q.type === "date"
+          ? ["minDate", "maxDate"]
+          : q.type === "multiple choice"
+            ? ["minSelections", "maxSelections"]
+            : q.type === "rating"
+              ? ["ratingMax"]
+              : [];
+    if (Object.keys(rules).some((key) => !allowed.includes(key)))
+      c.addIssue({
+        code: "custom",
+        message: `${q.label}: answer rules do not match the question type.`,
+      });
+    for (const [low, high] of [
+      [rules.minLength, rules.maxLength],
+      [rules.min, rules.max],
+      [rules.minDate, rules.maxDate],
+      [rules.minSelections, rules.maxSelections],
+    ] as const)
+      if (low !== undefined && high !== undefined && low > high)
+        c.addIssue({
+          code: "custom",
+          message: `${q.label}: minimum cannot exceed maximum.`,
+        });
+    if (
+      q.type === "multiple choice" &&
+      [rules.minSelections, rules.maxSelections].some(
+        (value) => value !== undefined && value > q.options.length,
+      )
+    )
+      c.addIssue({
+        code: "custom",
+        message: `${q.label}: selection limits cannot exceed the number of choices.`,
+      });
     if (new Set(q.options).size !== q.options.length)
       c.addIssue({
         code: "custom",
@@ -117,6 +190,23 @@ export const productSchema = z
     options: z.array(optionSchema).max(12),
   })
   .refine((p) => p.min <= p.max, "Minimum quantity cannot exceed maximum.");
+export const appearanceSchema = z.object({
+  background: color.optional(),
+  surface: color.optional(),
+  text: color.optional(),
+  muted: color.optional(),
+  border: color.optional(),
+  font: z
+    .enum(["poppins", "montserrat", "system", "outfit", "serif", "mono"])
+    .optional(),
+  radius: z.number().int().min(0).max(24).optional(),
+  fontSize: z.number().int().min(14).max(20).optional(),
+  align: z.enum(["left", "center"]).optional(),
+  buttonText: z.string().trim().max(60).optional(),
+  logo: image.optional(),
+  hideBranding: z.boolean().optional(),
+  accentLine: z.boolean().optional(),
+});
 export const draftSchema = z
   .object({
     title: z.string().trim().min(1).max(120),
@@ -126,6 +216,19 @@ export const draftSchema = z
     accent: color,
     button: color,
     hideLogo: z.boolean(),
+    whatsapp: z
+      .object({
+        phone: z
+          .string()
+          .regex(
+            /^(?:|\+[1-9]\d{7,14})$/,
+            "Use an international WhatsApp number, for example +971501234567.",
+          ),
+        introduction: z.string().trim().max(300),
+      })
+      .optional(),
+    completion: completionSchema.optional(),
+    appearance: appearanceSchema.optional(),
     experience: z.enum(["classic", "multipage", "interactive"]).optional(),
     interactive: z
       .object({
@@ -144,6 +247,17 @@ export const draftSchema = z
       .array(z.object({ id, title: z.string().trim().min(1).max(100) }))
       .min(1)
       .max(10)
+      .optional(),
+    pageRules: z
+      .array(
+        z.object({
+          id,
+          fromPageId: id,
+          targetPageId: id,
+          condition: conditionSchema,
+        }),
+      )
+      .max(20)
       .optional(),
     routing: z
       .object({
@@ -171,6 +285,35 @@ export const draftSchema = z
     const ordered = pages.flatMap((p) =>
       d.questions.filter((q) => (q.pageId || pages[0].id) === p.id),
     );
+    if (
+      new Set((d.pageRules || []).map((rule) => rule.id)).size !==
+      (d.pageRules || []).length
+    )
+      c.addIssue({
+        code: "custom",
+        message: "Duplicate section jump identifier.",
+      });
+    for (const rule of d.pageRules || []) {
+      const from = pages.findIndex((p) => p.id === rule.fromPageId);
+      const to = pages.findIndex((p) => p.id === rule.targetPageId);
+      const source = d.questions.find(
+        (q) => q.id === rule.condition.questionId,
+      );
+      const sourcePage = source
+        ? pages.findIndex((p) => p.id === (source.pageId || pages[0].id))
+        : -1;
+      if (from < 0 || (rule.targetPageId !== "__end" && to <= from))
+        c.addIssue({
+          code: "custom",
+          message: "Section jumps must go to a later section or to submission.",
+        });
+      if (sourcePage < 0 || sourcePage > from)
+        c.addIssue({
+          code: "custom",
+          message:
+            "Section jumps must use a question from the current or an earlier section.",
+        });
+    }
     for (const q of d.questions) {
       if (q.pageId && !pages.some((p) => p.id === q.pageId))
         c.addIssue({
@@ -270,6 +413,8 @@ export type Receipt = {
   formType: string;
   businessName: string;
   phone: string;
+  introduction?: string;
+  completion?: z.infer<typeof completionSchema>;
   currency: string;
   answers: {
     id?: string;
@@ -396,20 +541,40 @@ export function formPages(draft: Draft) {
 }
 export function visibleQuestions(draft: Draft, answers: Answers) {
   const pages = formPages(draft);
-  const ordered = pages.flatMap((p) =>
-    draft.questions.filter((q) => (q.pageId || pages[0].id) === p.id),
-  );
   const visible: Question[] = [];
   const clean: Answers = {};
-  for (const q of ordered) {
-    // Hidden parent answers never trigger a dependent question, even when forged.
+  for (let index = 0; index < pages.length; index++) {
+    const page = pages[index];
+    const questions = draft.questions.filter(
+      (q) => (q.pageId || pages[0].id) === page.id,
+    );
+    for (const q of questions) {
+      // Hidden parent answers never trigger a dependent question, even when forged.
+      if (
+        !q.condition ||
+        (visible.some((p) => p.id === q.condition!.questionId) &&
+          matchesCondition(q.condition, clean))
+      ) {
+        visible.push(q);
+        if (answers[q.id] !== undefined) clean[q.id] = answers[q.id];
+      }
+    }
+    // Only answers on the visited, visible path may select the next section.
     if (
-      !q.condition ||
-      (visible.some((p) => p.id === q.condition!.questionId) &&
-        matchesCondition(q.condition, clean))
+      draft.experience === "multipage" ||
+      (!draft.experience && pages.length > 1)
     ) {
-      visible.push(q);
-      if (answers[q.id] !== undefined) clean[q.id] = answers[q.id];
+      const jump = draft.pageRules?.find(
+        (rule) =>
+          rule.fromPageId === page.id &&
+          visible.some((q) => q.id === rule.condition.questionId) &&
+          matchesCondition(rule.condition, clean),
+      );
+      if (jump?.targetPageId === "__end") break;
+      if (jump) {
+        const target = pages.findIndex((p) => p.id === jump.targetPageId);
+        if (target > index) index = target - 1;
+      }
     }
   }
   return visible;
@@ -437,9 +602,33 @@ export function validateAnswers(
         throw new Error(`${q.label} is required.`);
       if (typeof v === "string" && v.length > 4000)
         throw new Error(`${q.label} is too long.`);
+      const rules = q.validation || {};
+      if (Array.isArray(v) && v.length) {
+        if (rules.minSelections !== undefined && v.length < rules.minSelections)
+          throw new Error(
+            `Choose at least ${rules.minSelections} options for ${q.label}.`,
+          );
+        if (rules.maxSelections !== undefined && v.length > rules.maxSelections)
+          throw new Error(
+            `Choose at most ${rules.maxSelections} options for ${q.label}.`,
+          );
+      }
       if (v && typeof v === "string") {
-        if (q.type === "rating" && !/^[1-5]$/.test(v))
-          throw new Error("Choose a rating from 1 to 5.");
+        if (rules.minLength !== undefined && v.trim().length < rules.minLength)
+          throw new Error(
+            `Enter at least ${rules.minLength} characters for ${q.label}.`,
+          );
+        if (rules.maxLength !== undefined && v.length > rules.maxLength)
+          throw new Error(
+            `${q.label} is too long. Enter at most ${rules.maxLength} characters.`,
+          );
+        if (
+          q.type === "rating" &&
+          (!/^\d+$/.test(v) ||
+            Number(v) < 1 ||
+            Number(v) > (rules.ratingMax || 5))
+        )
+          throw new Error(`Choose a rating from 1 to ${rules.ratingMax || 5}.`);
         if (q.type === "yes/no" && !["Yes", "No"].includes(v))
           throw new Error(`Check ${q.label}.`);
         if (q.type === "url") {
@@ -468,6 +657,23 @@ export function validateAnswers(
         if (q.type === "number" && !/^-?\d+(\.\d+)?$/.test(v))
           throw new Error("Enter a valid number.");
         if (
+          q.type === "number" &&
+          (!Number.isFinite(Number(v)) ||
+            (rules.min !== undefined && Number(v) < rules.min) ||
+            (rules.max !== undefined && Number(v) > rules.max))
+        )
+          throw new Error(
+            `Enter a number within the allowed range for ${q.label}.`,
+          );
+        if (
+          q.type === "date" &&
+          ((rules.minDate && v < rules.minDate) ||
+            (rules.maxDate && v > rules.maxDate))
+        )
+          throw new Error(
+            `Choose a date within the allowed range for ${q.label}.`,
+          );
+        if (
           (q.type === "single choice" || q.type === "dropdown") &&
           !q.options.includes(v)
         )
@@ -486,7 +692,7 @@ export function validateAnswers(
 export function formatMessage(r: Omit<Receipt, "message" | "token">) {
   return [
     `Hello ${r.businessName},`,
-    `I’ve submitted ${r.formTitle}.`,
+    r.introduction || `I’ve submitted ${r.formTitle}.`,
     `Reference: ${r.id.slice(0, 8)}`,
     "",
     ...r.answers

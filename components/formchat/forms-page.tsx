@@ -1,9 +1,36 @@
 "use client";
 import { useState } from "react";
-import { FileText, Inbox, Plus, Search, ArrowUpRight, ArrowRight, MoreHorizontal, Copy, Pause, Link2, MessageCircle, Package, LayoutTemplate } from "lucide-react";
+import {
+  FileText,
+  Inbox,
+  Plus,
+  Search,
+  ArrowUpRight,
+  ArrowRight,
+  MoreHorizontal,
+  Copy,
+  Pause,
+  Link2,
+  MessageCircle,
+  Package,
+  LayoutTemplate,
+} from "lucide-react";
 import { toast } from "sonner";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Table, TableHeader, TableHead, TableRow, TableBody, TableCell } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Table,
+  TableHeader,
+  TableHead,
+  TableRow,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Business, FormRecord } from "@/lib/model";
 import { PLANS } from "@/lib/config";
@@ -24,7 +51,10 @@ export default function FormsPage({
   usage: number;
   business: Business;
   onNew: () => void;
-  onEdit: (f: FormRecord) => void;
+  onEdit: (
+    f: FormRecord,
+    section?: "build" | "share" | "responses" | "settings",
+  ) => void;
   onRefresh: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -197,7 +227,14 @@ export default function FormsPage({
                   </span>
                 </TableCell>
                 <TableCell>
-                  <span className="submission-number">{f.submissions}</span>
+                  <button
+                    className="text-btn"
+                    aria-label={`View responses for ${f.draft.title}`}
+                    onClick={() => onEdit(f, "responses")}
+                  >
+                    <Inbox size={14} />
+                    {f.submissions} responses
+                  </button>
                 </TableCell>
                 <TableCell>
                   <span className="date-cell">
@@ -251,10 +288,18 @@ export default function FormsPage({
                           Preview form
                         </DropdownMenuItem>
                         {f.status === "published" && (
-                          <DropdownMenuItem onClick={() => setShare(f)}>
-                            Share link & QR code
+                          <DropdownMenuItem onClick={() => onEdit(f, "share")}>
+                            Share form
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem
+                          onClick={() => onEdit(f, "responses")}
+                        >
+                          View responses
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onEdit(f, "settings")}>
+                          Form settings
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => action(f, "duplicate")}
                         >
@@ -267,9 +312,9 @@ export default function FormsPage({
                         ) : (
                           f.version > 0 && (
                             <DropdownMenuItem
-                              onClick={() => action(f, "publish")}
+                              onClick={() => action(f, "published")}
                             >
-                              Publish current draft
+                              Reopen published form
                             </DropdownMenuItem>
                           )
                         )}

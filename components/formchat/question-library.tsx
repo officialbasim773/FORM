@@ -19,7 +19,13 @@ import {
   Plus,
 } from "lucide-react";
 import { Question } from "@/lib/model";
-import { Modal } from "./ui";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 const fields: {
   type: Question["type"];
   title: string;
@@ -176,61 +182,72 @@ export default function QuestionLibrary({
     onClose();
   }
   return (
-    <Modal
+    <Sheet
       open={open}
-      onClose={onClose}
-      title="Ask the right question"
-      description="Choose an answer format or start with a ready-made question. You can edit it afterwards."
+      onOpenChange={(value) => {
+        if (!value) onClose();
+      }}
     >
-      <div className="question-library">
-        <label className="question-search">
-          <Search size={18} />
-          <input
-            aria-label="Search question types"
-            placeholder="Search questions…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
-        <div className="question-type-grid">
-          {fields
-            .filter((f) =>
-              (f.title + " " + f.description)
-                .toLowerCase()
-                .includes(search.toLowerCase()),
-            )
-            .map((f) => (
-              <button type="button" key={f.type} onClick={() => add(f)}>
-                <f.icon size={21} />
-                <span>
-                  <strong>{f.title}</strong>
-                  <small>{f.description}</small>
-                </span>
-                <Plus size={15} />
-              </button>
-            ))}
-        </div>
-        {!fields.some((f) =>
-          (f.title + " " + f.description)
-            .toLowerCase()
-            .includes(search.toLowerCase()),
-        ) && (
-          <p role="status">No matching type. Try “choice”, “date” or “text”.</p>
-        )}
-        {!search && (
-          <>
-            <h3>Useful starting points</h3>
-            <div className="question-suggestions">
-              {suggestions.map((q) => (
-                <button type="button" key={q.label} onClick={() => add(q)}>
+      <SheetContent side="left" className="question-library-drawer">
+        <SheetHeader>
+          <SheetTitle>Add a question</SheetTitle>
+          <SheetDescription>
+            Choose a format or a ready-made question. Edit its details on the
+            canvas.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="question-library">
+          <label className="question-search">
+            <Search size={18} />
+            <input
+              aria-label="Search question types"
+              placeholder="Search questions…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <div className="question-type-grid">
+            {fields
+              .filter((f) =>
+                (f.title + " " + f.description)
+                  .toLowerCase()
+                  .includes(search.toLowerCase()),
+              )
+              .map((f) => (
+                <button type="button" key={f.type} onClick={() => add(f)}>
+                  <f.icon size={21} />
+                  <span>
+                    <strong>{f.title}</strong>
+                    <small>{f.description}</small>
+                  </span>
                   <Plus size={15} />
-                  {q.label}
                 </button>
               ))}
-            </div>
-          </>
-        )}
-      </div>
-    </Modal>
+          </div>
+          {!fields.some((f) =>
+            (f.title + " " + f.description)
+              .toLowerCase()
+              .includes(search.toLowerCase()),
+          ) && (
+            <p role="status">
+              No matching type. Try “choice”, “date” or “text”.
+            </p>
+          )}
+          {!search && (
+            <>
+              <h3>Useful starting points</h3>
+              <div className="question-suggestions">
+                {suggestions.map((q) => (
+                  <button type="button" key={q.label} onClick={() => add(q)}>
+                    <Plus size={15} />
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

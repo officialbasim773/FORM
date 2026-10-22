@@ -1,4 +1,6 @@
 "use client";
+import { usePublicEmbed } from "@/lib/use-public-embed";
+import { readApiResponse } from "@/lib/api-response";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -54,6 +56,7 @@ type Confirmation = {
 };
 const emptyCustomer = { name: "", email: "", phone: "", notes: "" };
 export default function PublicBooking({ businessId }: { businessId: string }) {
+  const { embedded, inline } = usePublicEmbed("appointment", businessId);
   const [data, setData] = useState<Options | null>(null),
     [step, setStep] = useState(0),
     [service, setService] = useState(""),
@@ -145,7 +148,14 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: receipt.id, token: receipt.token }),
       });
-      const result: any = await response.json();
+      const result: any = await (async () => {
+        try {
+          return await readApiResponse(response);
+        } catch (e) {
+          if (!response.ok) return { error: (e as Error).message };
+          throw e;
+        }
+      })();
       if (!response.ok)
         throw new Error(result.error || "Could not refresh status.");
       const next = { ...result, token: receipt.token };
@@ -182,7 +192,14 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const result: any = await response.json();
+      const result: any = await (async () => {
+        try {
+          return await readApiResponse(response);
+        } catch (e) {
+          if (!response.ok) return { error: (e as Error).message };
+          throw e;
+        }
+      })();
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500) {
           pending.current = null;
@@ -210,7 +227,10 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
   const name = receipt?.businessName || data?.business.name || "Appointments";
   const heading = (
     <header className="book-brand">
-      <a href={`/book/${businessId}`} aria-label={`${name} booking page`}>
+      <a
+        href={`/book/${businessId}${embedded ? "?embed=1" + (inline ? "&resize=1" : "") : ""}`}
+        aria-label={`${name} booking page`}
+      >
         {data?.business.logo ? (
           <img src={data.business.logo} alt="" />
         ) : (
@@ -225,7 +245,13 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
   );
   if (receipt)
     return (
-      <main className="booking-public">
+      <main
+        className={
+          "booking-public" +
+          (embedded ? " booking-embedded" : "") +
+          (inline ? " booking-inline" : "")
+        }
+      >
         {heading}
         <section className="book-success">
           <div className="book-success-icon">
@@ -304,7 +330,13 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
     );
   if (!data)
     return (
-      <main className="booking-public">
+      <main
+        className={
+          "booking-public" +
+          (embedded ? " booking-embedded" : "") +
+          (inline ? " booking-inline" : "")
+        }
+      >
         {heading}
         <section className="book-success">
           <CalendarDays size={32} />
@@ -336,7 +368,13 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   return (
-    <main className="booking-public">
+    <main
+      className={
+        "booking-public" +
+        (embedded ? " booking-embedded" : "") +
+        (inline ? " booking-inline" : "")
+      }
+    >
       {heading}
       <nav className="book-progress" aria-label="Booking progress">
         {["Service", "Date & time", "Your details", "Review"].map(

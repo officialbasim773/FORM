@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { ImagePlus, Plus, Trash2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
+import { parseBulkChoices } from "@/lib/form-authoring";
+import { Modal } from "./ui";
 import { Question } from "@/lib/model";
 import { upload } from "@/lib/client";
 function ChoiceImage({
@@ -68,8 +70,14 @@ export default function AnswerEditor({
   onChange,
 }: {
   question: Question;
-  onChange: (patch: Partial<Question>) => void;
+  onChange: (
+    patch: Partial<Question>,
+    renames?: Record<string, string>,
+  ) => boolean | void;
 }) {
+  const [bulk, setBulk] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkError, setBulkError] = useState("");
   const choices = q.type.includes("choice") || q.type === "dropdown";
   const pictures =
     q.type !== "dropdown" &&
@@ -82,7 +90,7 @@ export default function AnswerEditor({
     const src = images[old];
     delete images[old];
     if (src) images[label] = src;
-    onChange({ options, optionImages: images });
+    onChange({ options, optionImages: images }, { [old]: label });
   }
   if (choices)
     return (
@@ -115,6 +123,73 @@ export default function AnswerEditor({
             </div>
           )}
         </div>
+        <button
+          type="button"
+          className="btn compact bulk-choices-button"
+          onClick={() => {
+            setBulkText(q.options.join("\n"));
+            setBulkError("");
+            setBulk(true);
+          }}
+        >
+          Edit choices in bulk
+        </button>
+        <Modal
+          open={bulk}
+          onClose={() => setBulk(false)}
+          title="Edit choices in bulk"
+          description="One choice per line. Labels containing commas stay together. Up to 30 choices."
+        >
+          <label>
+            Choices (one per line)
+            <textarea
+              rows={6}
+              value={bulkText}
+              maxLength={6000}
+              onChange={(e) => {
+                setBulkText(e.target.value);
+                setBulkError("");
+              }}
+            />
+          </label>
+          {bulkError && (
+            <p className="error" role="alert">
+              {bulkError}
+            </p>
+          )}
+          <p className="small">
+            Images stay attached to matching labels. Update any rules before
+            removing a choice they use.
+          </p>
+          <div className="row">
+            <button className="btn" onClick={() => setBulk(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => {
+                try {
+                  const options = parseBulkChoices(bulkText);
+                  const optionImages = Object.fromEntries(
+                    Object.entries(q.optionImages || {}).filter(([label]) =>
+                      options.includes(label),
+                    ),
+                  );
+                  const applied = onChange({ options, optionImages });
+                  if (applied !== false) setBulk(false);
+                  else
+                    setBulkError(
+                      "A choice is used by a rule. Update the rule before removing it.",
+                    );
+                } catch (e) {
+                  setBulkError((e as Error).message);
+                }
+              }}
+            >
+              Apply choices
+            </button>
+          </div>
+        </Modal>
         {q.type === "dropdown" && (
           <div className="dropdown-example">
             Choose an option
@@ -152,6 +227,9 @@ export default function AnswerEditor({
               )}
               <div className="editable-option-label">
                 <input
+                  className="choice-label-input"
+                  type="text"
+                  size={1}
                   aria-label={`Option ${i + 1} label`}
                   maxLength={100}
                   placeholder={`Option ${i + 1}`}
@@ -219,7 +297,10 @@ export default function AnswerEditor({
         </div>
       ) : q.type === "rating" ? (
         <div className="preview-answer-buttons">
-          {[1, 2, 3, 4, 5].map((n) => (
+          {Array.from(
+            { length: q.validation?.ratingMax || 5 },
+            (_, i) => i + 1,
+          ).map((n) => (
             <span key={n}>{n}</span>
           ))}
         </div>

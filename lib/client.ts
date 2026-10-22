@@ -1,16 +1,22 @@
+import { readApiResponse } from "./api-response";
 export async function api<T = any>(
   path: string,
   method = "GET",
   data?: unknown,
 ): Promise<T> {
-  const res = await fetch("/api/" + path, {
-    method,
-    headers: data ? { "Content-Type": "application/json" } : undefined,
-    body: data ? JSON.stringify(data) : undefined,
-  });
-  const out: any = await res.json();
-  if (!res.ok) throw new Error(out.error || "Please try again.");
-  return out;
+  let res: Response;
+  try {
+    res = await fetch("/api/" + path, {
+      method,
+      headers: data ? { "Content-Type": "application/json" } : undefined,
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  } catch {
+    throw new Error(
+      "Could not reach FormChat. Check your connection and try again. Your input has been kept.",
+    );
+  }
+  return readApiResponse<T>(res);
 }
 export async function upload(file: File) {
   if (
@@ -38,8 +44,7 @@ export async function upload(file: File) {
     headers: { "Content-Type": "image/webp" },
     body: blob,
   });
-  const data: any = await res.json();
-  if (!res.ok) throw new Error(data.error);
+  const data: any = await readApiResponse(res);
   return data.url as string;
 }
 export async function copy(text: string) {

@@ -147,6 +147,36 @@ export default function Workspace() {
     ).catch(() => {});
     return () => lifecycle.abort();
   }, []);
+  useEffect(() => {
+    let active = true;
+    const openFromLink = () => {
+      const match = location.hash.match(
+        /^#forms\/([\w-]+)\/(build|share|responses|settings)$/,
+      );
+      if (
+        !match ||
+        !business ||
+        business.role === "member" ||
+        editing?.id === match[1]
+      )
+        return;
+      if (!forms.some((f) => f.id === match[1])) return;
+      api(`forms/${match[1]}`)
+        .then((form) => {
+          if (active && location.hash.startsWith(`#forms/${form.id}/`))
+            setEditing(form);
+        })
+        .catch((e) => {
+          if (active) toast.error(e.message);
+        });
+    };
+    openFromLink();
+    window.addEventListener("hashchange", openFromLink);
+    return () => {
+      active = false;
+      window.removeEventListener("hashchange", openFromLink);
+    };
+  }, [forms, business, editing]);
   if (loading) return <Loading />;
   if (error && !user)
     return (
@@ -361,9 +391,15 @@ export default function Workspace() {
                 business={business}
                 usage={usage}
                 onNew={() => setCreating(true)}
-                onEdit={async (f) => {
+                onEdit={async (f, section = "build") => {
                   try {
-                    setEditing(await api(`forms/${f.id}`));
+                    const current = await api(`forms/${f.id}`);
+                    window.history.replaceState(
+                      null,
+                      "",
+                      `#forms/${f.id}/${section}`,
+                    );
+                    setEditing(current);
                   } catch (e) {
                     toast.error((e as Error).message);
                   }
@@ -408,6 +444,7 @@ export default function Workspace() {
         onClose={() => setCreating(false)}
         onCreated={(f) => {
           setForms((arr) => [f, ...arr]);
+          window.history.replaceState(null, "", `#forms/${f.id}/build`);
           setEditing(f);
         }}
       />

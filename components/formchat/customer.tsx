@@ -1,4 +1,6 @@
 "use client";
+import { usePublicEmbed } from "@/lib/use-public-embed";
+import { formAppearance, appearanceVariables } from "@/lib/form-appearance";
 import { formatAppointment } from "@/lib/appointments";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -88,13 +90,14 @@ export function ReceiptView({ receipt: r }: { receipt: Receipt }) {
     </>
   );
 }
-export default function Customer({
+function CustomerContent({
   draft,
   business,
   slug,
   version,
   preview = false,
   previewQuestionId,
+  embedded = false,
 }: {
   draft: Draft;
   business: Pick<Business, "name" | "logo">;
@@ -102,6 +105,7 @@ export default function Customer({
   version?: number;
   preview?: boolean;
   previewQuestionId?: string;
+  embedded?: boolean;
 }) {
   const [welcomed, setWelcomed] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
@@ -355,16 +359,23 @@ export default function Customer({
           }),
         );
       } catch {}
-      setOpened(true);
-      void fetch(`/api/public/${slug}/handoff`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: r.id, token: r.token }),
-        keepalive: true,
-      }).catch(() => {});
-      window.location.assign(
-        `https://wa.me/${r.phone.replace(/\D/g, "")}?text=${encodeURIComponent(r.message)}`,
-      );
+      if (
+        !embedded &&
+        r.completion?.autoOpenWhatsApp !== false &&
+        `https://wa.me/${r.phone.replace(/\D/g, "")}?text=${encodeURIComponent(r.message)}`
+          .length <= 1800
+      ) {
+        setOpened(true);
+        void fetch(`/api/public/${slug}/handoff`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: r.id, token: r.token }),
+          keepalive: true,
+        }).catch(() => {});
+        window.location.assign(
+          `https://wa.me/${r.phone.replace(/\D/g, "")}?text=${encodeURIComponent(r.message)}`,
+        );
+      }
       scrollTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e) {
       setError((e as Error).message);
@@ -400,8 +411,11 @@ export default function Customer({
         <h1>
           {receipt.booking
             ? "Your appointment is booked."
-            : "Your request is saved."}
+            : receipt.completion?.title || "Your request is saved."}
         </h1>
+        {!receipt.booking && receipt.completion?.description && (
+          <p>{receipt.completion.description}</p>
+        )}
         {receipt.booking && (
           <div className="handoff-notice">
             <div>
@@ -424,9 +438,11 @@ export default function Customer({
           </div>
         )}
         <p>
-          {receipt.booking
-            ? "Use the button below to contact "
-            : "If WhatsApp didn’t open, use the button below to contact "}
+          {embedded
+            ? "Your response is saved. Continue to WhatsApp below to contact "
+            : receipt.booking || !opened
+              ? "Use the button below to contact "
+              : "If WhatsApp didn’t open, use the button below to contact "}
           {receipt.businessName}, then tap <strong>Send</strong>.
         </p>
         <div className="handoff-notice">
@@ -542,19 +558,20 @@ export default function Customer({
       style={{ borderTopColor: draft.accent }}
     >
       <div className="customer-business">
-        {business.logo && !draft.hideLogo ? (
-          <img src={business.logo} alt={`${business.name} logo`} />
-        ) : (
-          <span
-            className="business-monogram"
-            style={{
-              background: draft.accent,
-              color: readableText(draft.accent),
-            }}
-          >
-            {business.name.slice(0, 1)}
-          </span>
-        )}
+        {!draft.hideLogo &&
+          (business.logo ? (
+            <img src={business.logo} alt={`${business.name} logo`} />
+          ) : (
+            <span
+              className="business-monogram"
+              style={{
+                background: draft.accent,
+                color: readableText(draft.accent),
+              }}
+            >
+              {business.name.slice(0, 1)}
+            </span>
+          ))}
         <span>{business.name || "Your business"}</span>
       </div>
       {!(interactive && settings.welcome && !welcomed) && (
@@ -611,10 +628,16 @@ export default function Customer({
       ) : previewReview ? (
         <div className="preview-result">
           <CheckCircle2 size={28} />
-          <h3>Ready to submit</h3>
+          <span className="eyebrow">CONFIRMATION PREVIEW</span>
+          <h3>{draft.completion?.title || "Your request is saved."}</h3>
+          {draft.completion?.description && (
+            <p>{draft.completion.description}</p>
+          )}
           <p>
-            This is a preview. A live submission saves the request and opens the
-            WhatsApp conversation directly.
+            This is a preview. Nothing was saved and no message was sent.
+            {draft.completion?.autoOpenWhatsApp === false
+              ? " Customers choose Continue to WhatsApp after saving."
+              : " A live submission saves the response before opening WhatsApp."}
           </p>
           <button className="btn" onClick={() => setPreviewReview(false)}>
             <ArrowLeft size={15} />
@@ -1033,7 +1056,9 @@ export default function Customer({
                         setAnswers({ ...answers, [q.id]: e.target.value })
                       }
                     >
-                      <option value="">Choose an option</option>
+                      <option value="">
+                        {q.placeholder || "Choose an option"}
+                      </option>
                       {q.options.map((o) => (
                         <option key={o} value={o}>
                           {o}
@@ -1057,7 +1082,10 @@ export default function Customer({
                       {(q.type === "yes/no"
                         ? ["Yes", "No"]
                         : q.type === "rating"
-                          ? ["1", "2", "3", "4", "5"]
+                          ? Array.from(
+                              { length: q.validation?.ratingMax || 5 },
+                              (_, i) => String(i + 1),
+                            )
                           : q.options
                       ).map((o) => (
                         <label
@@ -1161,7 +1189,9 @@ export default function Customer({
                   ) : ["long text", "address"].includes(q.type) ? (
                     <textarea
                       id={"q-" + q.id}
-                      maxLength={4000}
+                      placeholder={q.placeholder}
+                      minLength={q.validation?.minLength}
+                      maxLength={q.validation?.maxLength || 4000}
                       required={q.required}
                       rows={q.type === "address" ? 2 : 3}
                       value={(answers[q.id] as string) || ""}
@@ -1172,7 +1202,23 @@ export default function Customer({
                   ) : (
                     <input
                       id={"q-" + q.id}
-                      maxLength={4000}
+                      placeholder={q.placeholder}
+                      minLength={q.validation?.minLength}
+                      maxLength={q.validation?.maxLength || 4000}
+                      min={
+                        q.type === "date"
+                          ? q.validation?.minDate
+                          : q.type === "number"
+                            ? q.validation?.min
+                            : undefined
+                      }
+                      max={
+                        q.type === "date"
+                          ? q.validation?.maxDate
+                          : q.type === "number"
+                            ? q.validation?.max
+                            : undefined
+                      }
                       type={
                         q.type === "phone"
                           ? "tel"
@@ -1240,7 +1286,8 @@ export default function Customer({
               : lastPage
                 ? preview
                   ? "Finish preview"
-                  : "Submit & open WhatsApp"
+                  : draft.appearance?.buttonText ||
+                    (embedded ? "Submit request" : "Submit & open WhatsApp")
                 : "Continue"}
             <ArrowRight size={17} />
           </button>
@@ -1271,7 +1318,26 @@ export default function Customer({
     </div>
   );
 }
+export default function Customer(
+  props: React.ComponentProps<typeof CustomerContent>,
+) {
+  const a = formAppearance(props.draft);
+  return (
+    <div
+      className="customer-theme"
+      data-hide-branding={a.hideBranding}
+      data-accent-line={a.accentLine}
+      style={appearanceVariables(props.draft) as React.CSSProperties}
+    >
+      <CustomerContent
+        {...props}
+        business={{ ...props.business, logo: a.logo || props.business.logo }}
+      />
+    </div>
+  );
+}
 export function PublicForm({ slug }: { slug: string }) {
+  const { embedded, inline } = usePublicEmbed("form", slug);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -1280,7 +1346,16 @@ export function PublicForm({ slug }: { slug: string }) {
       .catch((e) => setError(e.message));
   }, [slug]);
   return (
-    <main className="public-page">
+    <main
+      className={
+        "public-page" +
+        (embedded ? " embedded-form-page" : "") +
+        (inline ? " inline-form-page" : "")
+      }
+      style={{
+        background: data ? formAppearance(data.form).background : "#ffffff",
+      }}
+    >
       {error ? (
         <div className="customer-sheet">
           <h1>We couldn’t open this form.</h1>
@@ -1296,6 +1371,7 @@ export function PublicForm({ slug }: { slug: string }) {
           business={data.business}
           slug={slug}
           version={data.version}
+          embedded={embedded}
         />
       ) : (
         <div className="loading" role="status">

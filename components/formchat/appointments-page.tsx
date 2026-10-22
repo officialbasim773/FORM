@@ -14,9 +14,13 @@ import {
   Clock3,
   UserRound,
   CheckCircle2,
+  Code2,
 } from "lucide-react";
 import { Customers, ManualBooking, BookingDetail } from "./appointment-tools";
 import { api, copy } from "@/lib/client";
+import { Modal } from "./ui";
+import WebsiteEmbed from "./website-embed";
+import AppointmentWidget from "./appointment-widget";
 import {
   defaultSchedule,
   formatAppointment,
@@ -169,6 +173,8 @@ export default function AppointmentsPage({
   const [tab, setTab] = useState("bookings");
   const [routeId, setRouteId] = useState("");
   const [newCustomer, setNewCustomer] = useState<any>(null);
+  const [showEmbed, setShowEmbed] = useState(false);
+  const [showWidget, setShowWidget] = useState(false);
   useEffect(() => {
     const sync = () => {
       const parts = window.location.hash.slice(1).split("/");
@@ -506,6 +512,14 @@ export default function AppointmentsPage({
           >
             <Copy size={15} /> Copy link
           </button>
+          <button className="btn" onClick={() => setShowEmbed(true)}>
+            <Code2 size={16} />
+            Website embed
+          </button>
+          <button className="btn" onClick={() => setShowWidget(true)}>
+            <CalendarDays size={16} />
+            Website widget
+          </button>
           <a
             className="btn primary"
             href={settings.bookingPath}
@@ -516,6 +530,35 @@ export default function AppointmentsPage({
           </a>
         </div>
       </div>
+      <Modal
+        open={showEmbed}
+        onClose={() => setShowEmbed(false)}
+        title="Embed appointment booking"
+        description="Let customers book directly on your website."
+      >
+        <WebsiteEmbed
+          kind="appointment"
+          id={businessId}
+          enabled={
+            settings.enabled &&
+            settings.config.services.some((s) => s.active !== false)
+          }
+        />
+      </Modal>
+      <Modal
+        open={showWidget}
+        onClose={() => setShowWidget(false)}
+        title="Appointment website widget"
+        description="A floating booking button that fits your website."
+      >
+        <AppointmentWidget
+          id={businessId}
+          enabled={
+            settings.enabled &&
+            settings.config.services.some((s) => s.active !== false)
+          }
+        />
+      </Modal>
       <div
         className="booking-tabs"
         role="tablist"

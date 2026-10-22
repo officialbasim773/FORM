@@ -28,6 +28,19 @@ Demo phone numbers are placeholders. Replace the business WhatsApp number before
 
 ## Implemented
 
+### Forms as a WhatsApp form-builder product
+
+Forms has its own Build, Share, Responses and Settings workspace. See [Forms product scope](./FORMS_PRODUCT.md) for the current feature map, implementation plan and remaining gaps against WhatsForm.
+
+- **General settings** includes title, description, launch checks and pause/reopen. Reopening serves the last published snapshot without exposing unfinished draft changes.
+- **WhatsApp & ending** configures a per-form fallback recipient, message introduction and confirmation title/message. Active routed teammates take priority. New forms show confirmation first; existing forms retain automatic handoff unless changed. All responses save before handoff, and customers must tap Send in WhatsApp.
+- **Answer validation** supports text length, number/date bounds, checkbox counts and 1–5 or 1–10 ratings, checked on the server. Date-only bounds have no time-zone conversion and do not reserve appointment availability.
+- **Section jumps** in Layout & routing can skip to a later section or submit early. First matching rule wins, and the server excludes skipped answers. These rules apply to the Sections layout and reject backward jumps.
+- **Version history** lists the latest 100 published snapshots. Restore replaces the draft using a revision check; review and publish explicitly. Existing public forms and historical responses remain unchanged. Duplicate your current form before restoring if you need to keep that draft separately.
+- No new migration is needed for these optional draft settings. `npm run test:forms-core` runs isolated local authenticated API regressions against the running Worker.
+
+Payments, custom domains, file responses, AI generation and external integration delivery are still incomplete; this is not a claim of complete WhatsForm parity. Appointments remain separate from Forms.
+
 - Guided business setup with phone format validation, optional logo, templates and publish/share/QR.
 - Service and product form builders, fourteen question types, reorder/duplicate/delete, required controls, draft autosave and recovery, explicit versioned publishing and mobile preview.
 - Product images, quantities, choice/text customizations, price adjustments and integer minor-unit totals calculated again on the server. Templates include cake orders and bouquet requests.
@@ -198,3 +211,58 @@ Removed the form-layout picker, live flower demo and use-case strip from the pub
 ## Separate landing examples — October 19, 2026
 
 The header contains no example. The dedicated Examples section offers a project enquiry using the actual Customer renderer in preview mode and an interactive appointment walkthrough (service, sample date/time, details, review, demo completion). Appointment times are illustrative; the demo does not call the booking API or reserve slots. Neither example saves data or sends messages.
+
+## Forms workspace — October 20, 2026
+
+Forms now have their own **Build / Share / Responses / Settings** navigation. The hash URL `#forms/<id>/<section>` reopens the same owned form and destination after reload. The form header keeps autosave status, Preview and Publish visible as separate actions. Unsaved edits remain in the mounted builder while changing destinations; leaving via Back to forms waits for the save queue.
+
+- **Build:** select a welcome, question or ending block in the visual canvas to open its contextual inspector. Add questions from the left drawer. Product forms retain their catalog, quantities, options and delivery/pickup setup in the Products subtab. Question order and duplication controls remain keyboard-accessible in the inspector.
+- **Bulk choices:** enter one label per line, including labels containing commas. Input is trimmed, blank lines ignored, and duplicate labels, over 30 options, or labels over 100 characters rejected. Images stay with matching labels. Explicit renames update dependent visibility/routing rules; removing choices referenced by equality rules is blocked until those rules are updated. Reordering choices does not rewrite rule meaning.
+- **Placeholders:** optional custom placeholder text is supported for text, email, phone, number, URL, address and dropdown questions. It is validated to 200 characters by the server schema and rendered in customer forms. Existing forms need no migration because their JSON question metadata remains valid without this property.
+- **Share:** a dedicated destination supplies public links, copyable greeting/waiting/away-message templates and downloadable QR codes. Copy/download actions are gated for unpublished/paused forms. Templates are copied for manual use; messages are not sent or installed in WhatsApp automatically.
+- **Responses:** the per-form inbox and CSV export use a fixed form ID while keeping search, dates, workflow status, assignment and handoff filters. Workspace authorization still runs on the server. The workspace-wide inbox remains available separately.
+- **Settings:** layout, conditional flow, recipient routing and design reuse the existing controls. Preview completes without saving or sending anything. Publishing remains an explicit operation.
+
+Appointments stay in their independent application and booking page. At this stage there was no widget; the October 21 update below adds website embedding. AI generation, file responses, payment collection and custom domains remain outside this update.
+
+Verification: `npm test` (38 tests), `npm run typecheck`, `npm run build`, `npm run test:experiences` (28 authenticated local API checks), and `npm run test:auth`. The experience harness provisions a unique verified account only in local D1, signs in through Better Auth, and removes its test workspace/account afterwards; forged identity headers remain rejected. Browser checks covered canvas selection, insertion, duplicate and valid bulk choices, save continuity across tabs, draft sharing restrictions, scoped existing responses, published-link copying, QR generation, Settings direct-link reload and preview completion.
+
+## Form design, reliable errors and website widgets — October 21, 2026
+
+**Settings → Design** now controls each form’s page/surface colours, accent, button, text, borders, font, font size, corners, heading alignment, submit label, logo and footer branding. Four starting styles are provided. These controls are available on every plan; business-level branding rules remain separate. New forms start with the business colours; owners can override them per form. Existing saved accent/button choices are preserved. Publish to apply draft changes publicly. Appearance is optional JSON metadata, so no migration is needed. Arbitrary custom CSS/HTML and custom font uploads are not supported.
+
+Choice labels use individual single-line inputs. Bulk editing remains an explicitly labelled one-choice-per-line area. Hidden image-upload inputs no longer create horizontal page overflow. Editing is locked while publishing or leaving through Back to forms. Links to another form now open that form rather than leaving the previous editor visible.
+
+API responses are read safely even when a Worker/proxy returns plain text or HTML. Expired sessions have a sign-in action in the editor; save failures retain the local draft and give a retry message instead of a JSON parser exception. This prevents the reported `Unexpected token` error from obscuring the service failure; it does not repair an upstream Worker outage. Browser recovery requires local storage and a matching server revision.
+
+### Install a website widget
+
+1. Publish the form, then open **Share → Website widget**.
+2. Set the button label, colour and bottom-left/right position.
+3. Copy the widget code into your website before `</body>` and publish the website. Use the public HTTPS FormChat origin for a deployed website; localhost snippets work only locally.
+4. Use **Test widget** to check the real form. Test submissions are real responses. Use **Share → Website embed** for an inline iframe instead of a floating widget.
+
+The dependency-free `/widget.js` loader isolates its button/dialog styles with a shadow root and loads the published customer form in a sandboxed iframe. It supports close, Escape, backdrop dismissal, focus return and a new-tab fallback. Install once per form per page. Widget options are encoded in the copied snippet; copy it again to change an installed launcher. Form design changes propagate after publishing without replacing the snippet.
+
+Embedded forms save the response and display its reference before offering a new-tab WhatsApp handoff. The customer must tap Send in WhatsApp; message delivery is not confirmed. Ordinary public links retain their existing handoff behavior. Paused/unpublished forms cannot accept responses. Appointments remain independent.
+
+Site builders must allow custom scripts or iframes. If the host has a Content Security Policy, allow the FormChat origin in `script-src` and `frame-src`; do not remove other protections. Automatic inline embeds fit their content; a fixed-height fallback remains available for builders that block scripts. No automatic host installation, cross-page analytics or external messaging service is included. Hosted deployment and third-party site-builder compatibility have not been verified.
+
+### Form and widget UI refinements
+
+Forms now default to **Poppins**, with **Montserrat** available in Settings → Design. Older neutral/system forms adopt Poppins; explicit Outfit, serif and mono choices remain supported. Fonts are self-hosted WOFF2 assets, including their OFL licenses in `public/fonts`; no Google Fonts request is needed at runtime. Characters outside the bundled Latin subset use the system fallback.
+
+Widget configuration and typography selectors have matching 44px fields, visible borders and keyboard focus, readable helper text, and layouts that stack in narrow panels. Widget button preferences are remembered per form in this browser, independently of the form draft; copy the snippet again to update an installed launcher. Long launcher labels wrap, popup titles truncate without displacing the close/open controls, and Escape from a form field closes the widget with focus returned to its launcher. Close messages are accepted only from the matching embedded window and service origin. Page configuration is shown only for the Sections layout.
+
+## Website embeds for forms and appointments
+
+- **Forms:** open the form → Share → Website embed. Publish the form first.
+- **Appointments:** open Appointments → Website embed beside the booking-page link. Enable booking and configure an active service first.
+- Automatic height is the default. Choose a maximum width (480, 640, 800 px, or full parent container); the default is 640 px. The embed never exceeds a smaller parent column. Copy the complete iframe + resizing script into a custom HTML block inside the desired section. Copy code from the deployed HTTPS app; localhost code is only for local testing.
+- Preview embed loads the real public flow. Submitting creates a real form response or appointment request; stop before Submit to inspect safely. Form responses are saved before offering WhatsApp. Appointment requests use live availability, atomic conflict checks, idempotency and owner approval; they have no WhatsApp handoff.
+- Automatic sizing requires both frames and scripts from the app origin (`frame-src` and `script-src` when using CSP). `/embed.js` accepts resize messages only from the embedded window at that service origin with the matching public resource ID. ResizeObserver updates intrinsic content height when content or container width changes, including growth and shrinkage across steps. Height is bounded to 80–20,000 px, with a small rounding allowance; very large content can still scroll at the upper bound. Inline pages use compact layouts rather than a full viewport minimum height.
+- If a site builder blocks scripts, select **Fixed height · no script**, choose 500–1400 px, and use the iframe-only snippet. **Replace previously installed fixed-height code with the new automatic snippet** to enable resizing. No automatic host installation or database migration is required.
+
+### Floating appointment widget
+
+In Appointments, select **Website widget** beside Website embed. Set the button label, corner and colour, then copy the script before the host’s closing `</body>` tag. The `data-booking` attribute opens the independent public appointment flow; existing `data-form` widget snippets still work. Preferences are remembered in this browser. Test widget opens a real preview with service selection, dates and times; submitting creates a real request. Requests still require owner approval, and no WhatsApp handoff is added. The widget loads only when opened, isolates its styles, and supports close, Escape from a customer field, and a new-tab alternative. Use one floating button per corner when installing multiple widgets.

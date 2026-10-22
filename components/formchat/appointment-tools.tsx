@@ -1,4 +1,5 @@
 "use client";
+import { readApiResponse } from "@/lib/api-response";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { formatAppointment } from "@/lib/appointments";
@@ -293,7 +294,14 @@ export function ManualBooking({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const r: any = await response.json();
+      const r: any = await (async () => {
+        try {
+          return await readApiResponse(response);
+        } catch (e) {
+          if (!response.ok) return { error: (e as Error).message };
+          throw e;
+        }
+      })();
       if (!response.ok) {
         if (response.status < 500) pending.current = null;
         throw new Error(r.error || "Unable to save booking.");

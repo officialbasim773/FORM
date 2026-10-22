@@ -19,7 +19,9 @@ export function ConditionEditor({
     source?.type === "yes/no"
       ? ["Yes", "No"]
       : source?.type === "rating"
-        ? ["1", "2", "3", "4", "5"]
+        ? Array.from({ length: source.validation?.ratingMax || 5 }, (_, i) =>
+            String(i + 1),
+          )
         : source?.options || [];
   return (
     <div className="condition-fields">
@@ -107,7 +109,7 @@ export function QuestionFlow({
   );
   return (
     <div className="question-flow">
-      {pages.length > 1 && (
+      {draft.experience === "multipage" && pages.length > 1 && (
         <label>
           Page
           <select
@@ -295,81 +297,95 @@ export default function FlowEditor({
               />
             </label>
             <p className="small">
-              Submission saves answers and opens WhatsApp directly. Product
+              Submission saves answers before continuing to WhatsApp. Product
               forms keep the catalog together, then guide customers through
               their details.
             </p>
           </div>
         )}
       </section>
-      <section className="flow-section">
-        <span className="section-kicker">
-          <Layers size={16} /> MULTI-PAGE FORM
-        </span>
-        <h3>A little at a time</h3>
-        <p>
-          Group questions into clear steps. Empty conditional pages are skipped
-          automatically.
-        </p>
-        {pages.map((p, i) => (
-          <div className="page-editor-row" key={p.id}>
-            <span className="question-number">{i + 1}</span>
-            <label>
-              Page title
-              <input
-                maxLength={100}
-                value={p.title}
-                onChange={(e) =>
+      {draft.experience === "multipage" && (
+        <section className="flow-section">
+          <span className="section-kicker">
+            <Layers size={16} /> MULTI-PAGE FORM
+          </span>
+          <h3>A little at a time</h3>
+          <p>
+            Group questions into clear steps. Empty conditional pages are
+            skipped automatically.
+          </p>
+          {pages.map((p, i) => (
+            <div className="page-editor-row" key={p.id}>
+              <span className="question-number">{i + 1}</span>
+              <label>
+                Page title
+                <input
+                  maxLength={100}
+                  value={p.title}
+                  onChange={(e) =>
+                    onChange({
+                      pages: pages.map((x) =>
+                        x.id === p.id ? { ...x, title: e.target.value } : x,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="icon-btn"
+                disabled={pages.length === 1}
+                aria-label={`Delete page ${i + 1}`}
+                onClick={() => {
+                  const next = pages.filter((x) => x.id !== p.id);
                   onChange({
-                    pages: pages.map((x) =>
-                      x.id === p.id ? { ...x, title: e.target.value } : x,
+                    pages: next,
+                    questions: draft.questions.map((q) =>
+                      (q.pageId || pages[0].id) === p.id
+                        ? { ...q, pageId: next[0].id }
+                        : q,
                     ),
-                  })
-                }
-              />
-            </label>
-            <button
-              type="button"
-              className="icon-btn"
-              disabled={pages.length === 1}
-              aria-label={`Delete page ${i + 1}`}
-              onClick={() => {
-                const next = pages.filter((x) => x.id !== p.id);
-                onChange({
-                  pages: next,
-                  questions: draft.questions.map((q) =>
-                    (q.pageId || pages[0].id) === p.id
-                      ? { ...q, pageId: next[0].id }
-                      : q,
-                  ),
-                });
-              }}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          className="btn"
-          disabled={pages.length >= 10}
-          onClick={() =>
-            onChange({
-              pages: [
-                ...pages,
-                { id: crypto.randomUUID(), title: `Step ${pages.length + 1}` },
-              ],
-            })
-          }
-        >
-          <Plus size={16} />
-          Add page
-        </button>
-        <p className="small">
-          Assign each question to a page in the Questions tab. Products appear
-          on the first page.
+                  });
+                }}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="btn"
+            disabled={pages.length >= 10}
+            onClick={() =>
+              onChange({
+                pages: [
+                  ...pages,
+                  {
+                    id: crypto.randomUUID(),
+                    title: `Step ${pages.length + 1}`,
+                  },
+                ],
+              })
+            }
+          >
+            <Plus size={16} />
+            Add page
+          </button>
+          <p className="small">
+            Assign each question to a page under Build → Logic and visibility.
+            Products appear on the first page.
+          </p>
+        </section>
+      )}
+      {draft.experience === "multipage" && pages.length > 1 && (
+        <SectionJumps draft={draft} onChange={onChange} />
+      )}
+      {draft.experience !== "multipage" && !!draft.pageRules?.length && (
+        <p className="notice">
+          Your section jumps are saved. They apply when the form uses the
+          Sections layout.
         </p>
-      </section>
+      )}
       <section className="flow-section">
         <span className="section-kicker">
           <GitBranch size={16} /> CONDITIONAL QUESTIONS
@@ -545,11 +561,164 @@ export default function FlowEditor({
           </>
         )}
         <p className="small">
-          If no rule matches or a teammate is removed, requests go to the
-          business owner. Reassigning an existing response changes inbox access;
-          its original WhatsApp destination stays saved.
+          If no rule matches or a teammate is removed, the form’s fallback
+          WhatsApp number is used, then the business number. Reassigning an
+          existing response changes inbox access; its original WhatsApp
+          destination stays saved.
         </p>
       </section>
     </div>
+  );
+}
+
+function SectionJumps({
+  draft,
+  onChange,
+}: {
+  draft: Draft;
+  onChange: (patch: Partial<Draft>) => void;
+}) {
+  const pages = formPages(draft),
+    rules = draft.pageRules || [];
+  const sources = (pageId: string) =>
+    draft.questions.filter(
+      (q) =>
+        pages.findIndex((p) => p.id === (q.pageId || pages[0].id)) <=
+        pages.findIndex((p) => p.id === pageId),
+    );
+  const eligible = pages.filter((p) => sources(p.id).length);
+  const change = (id: string, patch: Partial<(typeof rules)[number]>) =>
+    onChange({
+      pageRules: rules.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    });
+  return (
+    <section className="flow-section section-jumps">
+      <span className="section-kicker">
+        <GitBranch size={16} /> SECTION JUMPS
+      </span>
+      <h3>Guide each customer to the right next step</h3>
+      <p>
+        After a section, use its answers to skip ahead or go straight to
+        submission. The first matching rule wins. Otherwise, the next section is
+        shown.
+      </p>
+      {rules.map((rule, index) => (
+        <div className="routing-rule" key={rule.id}>
+          <div className="between">
+            <strong>Rule {index + 1}</strong>
+            <div className="row">
+              <button
+                type="button"
+                className="btn compact"
+                disabled={index === 0}
+                onClick={() => {
+                  const next = [...rules];
+                  [next[index - 1], next[index]] = [
+                    next[index],
+                    next[index - 1],
+                  ];
+                  onChange({ pageRules: next });
+                }}
+              >
+                Move up
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Delete section jump ${index + 1}`}
+                onClick={() =>
+                  onChange({ pageRules: rules.filter((r) => r.id !== rule.id) })
+                }
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+          <label>
+            After section
+            <select
+              value={rule.fromPageId}
+              onChange={(e) => {
+                const fromPageId = e.target.value;
+                change(rule.id, {
+                  fromPageId,
+                  targetPageId:
+                    pages[pages.findIndex((p) => p.id === fromPageId) + 1]
+                      ?.id || "__end",
+                  condition: {
+                    questionId: sources(fromPageId)[0].id,
+                    operator: "equals",
+                    value: "",
+                  },
+                });
+              }}
+            >
+              {eligible.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ConditionEditor
+            condition={rule.condition}
+            questions={sources(rule.fromPageId)}
+            onChange={(condition) => change(rule.id, { condition })}
+          />
+          <label>
+            Then go to
+            <select
+              value={rule.targetPageId}
+              onChange={(e) =>
+                change(rule.id, { targetPageId: e.target.value })
+              }
+            >
+              {pages
+                .slice(pages.findIndex((p) => p.id === rule.fromPageId) + 1)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              <option value="__end">Submit form</option>
+            </select>
+          </label>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn"
+        disabled={rules.length >= 20 || !eligible.length}
+        onClick={() => {
+          const page = eligible[0];
+          if (!page) return;
+          onChange({
+            pageRules: [
+              ...rules,
+              {
+                id: crypto.randomUUID(),
+                fromPageId: page.id,
+                targetPageId:
+                  pages[pages.findIndex((p) => p.id === page.id) + 1]?.id ||
+                  "__end",
+                condition: {
+                  questionId: sources(page.id)[0].id,
+                  operator: "equals",
+                  value: "",
+                },
+              },
+            ],
+          });
+        }}
+      >
+        <Plus size={16} />
+        Add section jump
+      </button>
+      <p className="small">
+        Skipped answers are excluded from responses and WhatsApp. Required
+        questions still apply to the sections the customer visits. Remove or
+        update rules before moving their source question to a later section.
+      </p>
+    </section>
   );
 }

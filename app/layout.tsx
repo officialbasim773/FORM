@@ -6,6 +6,8 @@ import "./booking.css";
 import "./form-studio.css";
 import "./product-refresh.css";
 import "./landing-clean.css";
+import "./forms-workspace.css";
+import "./form-customisation.css";
 
 export const metadata: Metadata = {
   title: PRODUCT_NAME,

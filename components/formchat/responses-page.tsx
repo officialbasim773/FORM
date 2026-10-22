@@ -38,9 +38,11 @@ import Customer from "./customer";
 export default function ResponsesPage({
   forms,
   business,
+  fixedFormId,
 }: {
   forms: FormRecord[];
   business: Business;
+  fixedFormId?: string;
 }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [assigned, setAssigned] = useState("all");
@@ -68,7 +70,7 @@ export default function ResponsesPage({
     search,
     ...(workflow !== "all" ? { status: workflow } : {}),
     ...(assigned !== "all" ? { assigned } : {}),
-    ...(form !== "all" ? { form } : {}),
+    ...(fixedFormId ? { form: fixedFormId } : form !== "all" ? { form } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
     ...(handoff !== "all" ? { handoff } : {}),
@@ -172,15 +174,17 @@ export default function ResponsesPage({
             ]}
           />
         )}
-        <Picker
-          value={form}
-          onChange={setForm}
-          label="Filter by form"
-          options={[
-            { value: "all", label: "All forms" },
-            ...forms.map((f) => ({ value: f.id, label: f.draft.title })),
-          ]}
-        />
+        {!fixedFormId && (
+          <Picker
+            value={form}
+            onChange={setForm}
+            label="Filter by form"
+            options={[
+              { value: "all", label: "All forms" },
+              ...forms.map((f) => ({ value: f.id, label: f.draft.title })),
+            ]}
+          />
+        )}
         <Picker
           value={handoff}
           onChange={setHandoff}

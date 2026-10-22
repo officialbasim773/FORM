@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FormChat website widget preview</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f7f8fa;
+        color: #253047;
+        font-family: system-ui, sans-serif;
+      }
+      main {
+        max-width: 780px;
+        margin: 12vh auto;
+        padding: 30px;
+      }
+      small {
+        color: #60748a;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      h1 {
+        font-size: clamp(32px, 5vw, 52px);
+        line-height: 1.1;
+        letter-spacing: -1.4px;
+      }
+      p {
+        line-height: 1.8;
+        color: #68788a;
+      }
+      .card {
+        border: 1px solid #e0e6ed;
+        border-radius: 15px;
+        background: white;
+        padding: 25px;
+        margin-top: 30px;
+      }
+      a {
+        color: #176650;
+      }
+      code {
+        background: #edf2f4;
+        padding: 2px 5px;
+        border-radius: 4px;
+      }
+      button {
+        font-family: serif;
+        font-size: 28px;
+        background: orange;
+        color: black;
+      }
+      iframe {
+        border: 10px solid red;
+      } /* Deliberately different host styles: the widget stays isolated. */
+    </style>
+  </head>
+  <body>
+    <main>
+      <small>FormChat · Integration preview</small>
+      <h1>Your form. On your website.</h1>
+      <p>
+        This sample page loads the real website widget. Use the floating button
+        to open your published customer form, then close it to return here.
+      </p>
+      <div class="card">
+        <strong>Test without sending a request</strong>
+        <p>
+          Check your design, questions, and keyboard controls. Submitting this
+          form creates a real response in your workspace. To test only the
+          questions, stop before Submit.
+        </p>
+        <p>
+          The widget is isolated from this sample page’s colours and input
+          styles. Use the link in the widget header to open a new tab if your
+          browser blocks embedded content.
+        </p>
+      </div>
+      <p><a href="/">Return to FormChat</a></p>
+      <p id="error" role="alert"></p>
+    </main>
+    <script>
+      var q = new URLSearchParams(location.search),
+        slug = q.get("booking") || q.get("form") || "";
+      if (/^[\w-]{1,80}$/.test(slug)) {
+        var s = document.createElement("script");
+        s.src = "/widget.js";
+        s.defer = true;
+        if (q.get("booking")) s.dataset.booking = slug;
+        else s.dataset.form = slug;
+        s.dataset.label =
+          q.get("label") ||
+          (q.get("booking") ? "Book an appointment" : "Contact us");
+        s.dataset.position = q.get("position") || "right";
+        s.dataset.color = q.get("color") || "#176650";
+        document.body.appendChild(s);
+        if (q.get("booking")) {
+          document.querySelector("main > p").textContent =
+            "This sample page loads your appointment widget. Open it to check services, available times and the booking flow, then close it to return here.";
+          document.querySelector(".card strong").textContent =
+            "Test without making a booking";
+          document.querySelector("h1").textContent =
+            "Your booking page. On your website.";
+          document.querySelector(".card p").textContent =
+            "Check services, available dates and time slots. Submitting creates a real booking request. Stop before Request appointment to inspect safely.";
+        }
+      } else
+        document.getElementById("error").textContent =
+          "Open this preview from Share → Website widget in your form.";
+    </script>
+  </body>
+</html>

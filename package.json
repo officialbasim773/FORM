@@ -20,6 +20,8 @@
     "format": "prettier --write app components/formchat lib db tests scripts/seed.mjs scripts/migrate.mjs",
     "test:team-flow": "node tests/team-flow.mjs",
     "test:experiences": "node tests/experiences.mjs",
+    "test:forms-core": "node tests/forms-core.mjs",
+    "test:forms-logic": "node tests/forms-logic.mjs",
     "test:media": "node tests/media.mjs",
     "test:workflow": "node tests/workflow.mjs",
     "test:auth": "node tests/auth-smoke.mjs"

@@ -60,6 +60,17 @@ async function checkImages(b: Business, paths: string[]) {
       throw new HttpError(400, "Please upload an image to this business.");
   }
 }
+async function checkDraftImages(b: Business, draft: Draft) {
+  await checkImages(b, [
+    draft.appearance?.logo || "",
+    ...draft.products.map((p) => p.image),
+    draft.interactive?.media?.src || "",
+    ...draft.questions.flatMap((q) => [
+      q.media?.src || "",
+      ...Object.values(q.optionImages || {}),
+    ]),
+  ]);
+}
 async function handle(req: Request) {
   const url = new URL(req.url);
   const p = url.pathname.replace(/^\/api\//, "").split("/");
@@ -196,7 +207,9 @@ async function handle(req: Request) {
       .all<{ id: string }>();
     await db().batch([
       db().prepare("DELETE FROM bookings WHERE business_id=?").bind(b.id),
-      db().prepare("DELETE FROM appointment_customers WHERE business_id=?").bind(b.id),
+      db()
+        .prepare("DELETE FROM appointment_customers WHERE business_id=?")
+        .bind(b.id),
       db()
         .prepare("DELETE FROM appointment_settings WHERE business_id=?")
         .bind(b.id),
@@ -300,6 +313,12 @@ async function handle(req: Request) {
       if ((count?.n || 0) >= 100)
         throw new HttpError(400, "A workspace can contain up to 100 forms.");
       const draft = template(input.template, input.type);
+      draft.completion = {
+        title: "Your response is saved.",
+        description:
+          "Thank you. Continue to WhatsApp to send your details to our team.",
+        autoOpenWhatsApp: false,
+      };
       draft.experience = input.experience;
       if (input.experience === "multipage") {
         draft.pages = [
@@ -334,27 +353,56 @@ async function handle(req: Request) {
     }
     const f = await ownedForm(p[1], b);
     if (p.length === 2 && method === "GET") return json(decodeForm(f));
+    if (p[2] === "versions" && method === "GET") {
+      const history = await db()
+        .prepare(
+          "SELECT version,snapshot,created_at FROM versions WHERE form_id=? ORDER BY version DESC LIMIT 100",
+        )
+        .bind(f.id)
+        .all<{ version: number; snapshot: string; created_at: string }>();
+      return json({
+        versions: history.results.map((v) => ({
+          version: v.version,
+          createdAt: v.created_at,
+          title: JSON.parse(v.snapshot).title,
+          questions: JSON.parse(v.snapshot).questions.length,
+        })),
+      });
+    }
+    if (p[2] === "restore" && method === "POST") {
+      const input = z
+        .object({
+          revision: z.number().int().min(0),
+          version: z.number().int().min(1),
+        })
+        .strict()
+        .parse(await body(req));
+      const source = await db()
+        .prepare("SELECT snapshot FROM versions WHERE form_id=? AND version=?")
+        .bind(f.id, input.version)
+        .first<{ snapshot: string }>();
+      if (!source) throw new HttpError(404, "Published version not found.");
+      const restored = draftSchema.parse(JSON.parse(source.snapshot));
+      // Restore only the draft; the live snapshot and saved responses stay intact.
+      const result = await db()
+        .prepare(
+          "UPDATE forms SET draft=?,revision=revision+1,updated_at=? WHERE id=? AND business_id=? AND revision=? AND deleted=0",
+        )
+        .bind(JSON.stringify(restored), now(), f.id, b.id, input.revision)
+        .run();
+      if (!result.meta.changes)
+        throw new HttpError(
+          409,
+          "This form changed in another tab. Reload before restoring a version.",
+        );
+      return json(decodeForm(await ownedForm(f.id, b)));
+    }
     if (p.length === 2 && method === "PATCH") {
       const input = z
         .object({ draft: draftSchema, revision: z.number().int().min(0) })
         .parse(await body(req));
       await checkRouting(input.draft, b.id);
-      const old = JSON.parse(f.draft);
-      if (
-        !plan.branding &&
-        (input.draft.accent !== old.accent ||
-          input.draft.button !== old.button ||
-          input.draft.hideLogo !== old.hideLogo)
-      )
-        throw new HttpError(403, "Branding controls are included in Business.");
-      await checkImages(b, [
-        ...input.draft.products.map((x) => x.image),
-        input.draft.interactive?.media?.src || "",
-        ...input.draft.questions.flatMap((q) => [
-          q.media?.src || "",
-          ...Object.values(q.optionImages || {}),
-        ]),
-      ]);
+      await checkDraftImages(b, input.draft);
       const result = await db()
         .prepare(
           "UPDATE forms SET draft=?,revision=revision+1,updated_at=? WHERE id=? AND business_id=? AND revision=?",
@@ -406,6 +454,7 @@ async function handle(req: Request) {
     if (p[2] === "publish" && method === "POST") {
       const draft = draftSchema.parse(JSON.parse(f.draft));
       await checkRouting(draft, b.id);
+      await checkDraftImages(b, draft);
       if (draft.type === "product" && !plan.products)
         throw new HttpError(
           403,
@@ -447,8 +496,27 @@ async function handle(req: Request) {
     }
     if (p[2] === "status" && method === "POST") {
       const input = z
-        .object({ status: z.enum(["paused", "draft"]) })
+        .object({ status: z.enum(["paused", "draft", "published"]) })
         .parse(await body(req));
+      if (input.status === "published") {
+        if (!f.published)
+          throw new HttpError(
+            400,
+            "Publish your form before reopening responses.",
+          );
+        const result = await db()
+          .prepare(
+            "UPDATE forms SET status='published',updated_at=? WHERE id=? AND business_id=? AND deleted=0 AND published IS NOT NULL AND (status='published' OR (SELECT count(*) FROM forms WHERE business_id=? AND status='published' AND deleted=0)<?)",
+          )
+          .bind(now(), f.id, b.id, b.id, plan.publishedForms)
+          .run();
+        if (!result.meta.changes)
+          throw new HttpError(
+            409,
+            "Your published form limit has been reached. Pause another form first.",
+          );
+        return json(decodeForm(await ownedForm(f.id, b)));
+      }
       await db()
         .prepare(
           "UPDATE forms SET status=?,updated_at=? WHERE id=? AND business_id=?",
@@ -814,7 +882,9 @@ async function publicApi(req: Request, p: string[]) {
       formTitle: draft.title,
       formType: draft.type,
       businessName: f.name,
-      phone: assigned?.phone || f.phone,
+      phone: assigned?.phone || draft.whatsapp?.phone || f.phone,
+      introduction: draft.whatsapp?.introduction || undefined,
+      completion: draft.completion,
       currency: draft.currency,
       answers,
       items,
