@@ -1,6 +1,8 @@
+import { sessionFixtures } from "./session-fixtures.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-const base = process.env.TEST_URL || "http://127.0.0.1:5174";
+const base = process.env.TEST_URL || "http://localhost:5174";
+const session = sessionFixtures(base);
 if (!["localhost", "127.0.0.1"].includes(new URL(base).hostname))
   throw Error("Local tests only");
 const user = "workflow-" + randomUUID(),
@@ -14,8 +16,7 @@ async function req(
     method,
     headers: {
       "content-type": "application/json",
-      "oai-authenticated-user-id": who,
-      "oai-authenticated-user-email": who + "@example.test",
+      cookie: (await session(who)).cookie,
     },
     body: data ? JSON.stringify(data) : undefined,
   });

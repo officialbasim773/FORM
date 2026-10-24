@@ -290,6 +290,162 @@ const choice = (date, time = "09:00") => ({
   providerId: "owner",
   start: `${date}T${time}:00.000Z`,
 });
+await build({
+  entryPoints: [
+    "lib/auth-rate-limit.ts",
+    "lib/object-cleanup.ts",
+    "lib/security-headers.ts",
+  ],
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  outdir: ".sites-runtime/operational-tests",
+  outExtension: { ".js": ".mjs" },
+});
+const { authRateStorage } =
+  await import("../.sites-runtime/operational-tests/auth-rate-limit.mjs");
+const { retryObjectDeletions } =
+  await import("../.sites-runtime/operational-tests/object-cleanup.mjs");
+const { secureResponse } =
+  await import("../.sites-runtime/operational-tests/security-headers.mjs");
+test("authentication limits are atomic, shared and reset after expiry", async () => {
+  fixture();
+  const store = authRateStorage(globalThis.__appointmentTestEnv.DB);
+  const attempts = await Promise.all(
+    Array.from({ length: 20 }, () =>
+      store.consume("signin:one", { max: 3, window: 60 }),
+    ),
+  );
+  assert.equal(attempts.filter((x) => x.allowed).length, 3);
+  assert.ok(attempts.filter((x) => !x.allowed).every((x) => x.retryAfter > 0));
+  assert.equal(
+    (await store.consume("signin:other", { max: 3, window: 60 })).allowed,
+    true,
+  );
+  sqlite.exec("UPDATE auth_rates SET expires=0");
+  assert.equal(
+    (await store.consume("signin:one", { max: 3, window: 60 })).allowed,
+    true,
+  );
+});
+test("workspace image deletion survives R2 failure and is safely retried", async () => {
+  fixture();
+  sqlite.exec(
+    "INSERT INTO uploads(id,business_id,mime,size) VALUES('retry-image','business','image/png',1)",
+  );
+  let unavailable = true;
+  globalThis.__appointmentTestEnv.BUCKET = {
+    async delete() {
+      if (unavailable) throw Error("outage");
+    },
+  };
+  assert.equal((await request("business", "DELETE")).status, 200);
+  assert.equal(
+    sqlite
+      .prepare("SELECT count(*) n FROM businesses WHERE id='business'")
+      .get().n,
+    0,
+  );
+  const job = sqlite
+    .prepare("SELECT * FROM object_deletions WHERE key='retry-image'")
+    .get();
+  assert.equal(job.attempts, 1);
+  unavailable = false;
+  assert.equal(
+    (
+      await retryObjectDeletions(
+        globalThis.__appointmentTestEnv.DB,
+        globalThis.__appointmentTestEnv.BUCKET,
+        job.next_attempt,
+      )
+    ).deleted,
+    1,
+  );
+  assert.equal(
+    sqlite.prepare("SELECT count(*) n FROM object_deletions").get().n,
+    0,
+  );
+  assert.equal(
+    (
+      await retryObjectDeletions(
+        globalThis.__appointmentTestEnv.DB,
+        globalThis.__appointmentTestEnv.BUCKET,
+      )
+    ).deleted,
+    0,
+  );
+  delete globalThis.__appointmentTestEnv.BUCKET;
+});
+test("security headers protect private routes while allowing form and booking embeds", () => {
+  for (const path of [
+    "/",
+    "/about",
+    "/sign-in",
+    "/api/responses",
+    "/f/example",
+    "/book/business",
+  ]) {
+    const response = secureResponse(
+      new Request("https://forms.example" + path),
+      new Response("ok"),
+    );
+    assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+    assert.equal(
+      response.headers.get("Strict-Transport-Security"),
+      "max-age=31536000",
+    );
+    const embedded = /^\/(f|book)\//.test(path);
+    assert.equal(
+      response.headers.get("X-Frame-Options"),
+      embedded ? null : "DENY",
+    );
+    assert.ok(
+      response.headers
+        .get("Content-Security-Policy")
+        .includes(embedded ? "frame-ancestors *" : "frame-ancestors 'none'"),
+    );
+  }
+});
+test("failed upload commits retain compensation when R2 deletion also fails", async () => {
+  fixture();
+  const database = globalThis.__appointmentTestEnv.DB;
+  const originalBatch = database.batch;
+  database.batch = async (statements) => {
+    if (statements.some((s) => s.sql.includes("INSERT INTO uploads")))
+      throw Error("commit unavailable");
+    return originalBatch(statements);
+  };
+  globalThis.__appointmentTestEnv.BUCKET = {
+    async put() {},
+    async delete() {
+      throw Error("R2 unavailable");
+    },
+  };
+  const bytes = Uint8Array.from(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  );
+  try {
+    const response = await route.POST(
+      new Request("http://localhost/api/upload", {
+        method: "POST",
+        headers: { origin: "http://localhost", "content-type": "image/png" },
+        body: bytes,
+      }),
+    );
+    assert.equal(response.status, 500);
+    assert.equal(sqlite.prepare("SELECT count(*) n FROM uploads").get().n, 0);
+    assert.equal(
+      sqlite.prepare("SELECT count(*) n FROM object_deletions").get().n,
+      1,
+    );
+  } finally {
+    delete globalThis.__appointmentTestEnv.BUCKET;
+  }
+});
+
 test("existing enquiry flow saves the same receipt without a booking", async () => {
   fixture();
   const x = submission();
@@ -779,6 +935,51 @@ test("approval workflow holds pending slots, protects status access and releases
   );
 });
 
+test("approval atomically rejects a revoked provider and keeps the request pending", async () => {
+  const day = fixture();
+  sqlite.exec(
+    "INSERT INTO members(id,business_id,name,email,phone,status,expires_at,created_at) VALUES('provider','business','Provider','provider@example.test','+12025550100','active','2099-01-01','2026-01-01')",
+  );
+  const settings = config();
+  settings.services[0].providerIds = ["provider"];
+  settings.providers[0].id = "provider";
+  sqlite
+    .prepare("UPDATE appointment_settings SET config=?")
+    .run(JSON.stringify(settings));
+  const input = bookingInput({ ...choice(day), providerId: "provider" });
+  const pending = await book(input);
+  assert.equal(pending.status, 201, JSON.stringify(pending.body));
+  sqlite.exec("UPDATE members SET status='revoked' WHERE id='provider'");
+  const accepted = await request(
+    `appointments/bookings/${pending.body.id}`,
+    "PATCH",
+    { revision: 0, status: "confirmed" },
+  );
+  assert.equal(accepted.status, 409);
+  assert.equal(
+    sqlite
+      .prepare("SELECT status FROM bookings WHERE id=?")
+      .get(pending.body.id).status,
+    "pending",
+  );
+  assert.throws(
+    () =>
+      sqlite
+        .prepare("UPDATE bookings SET status='confirmed' WHERE id=?")
+        .run(pending.body.id),
+    /APPOINTMENT_PROVIDER_UNAVAILABLE/,
+  );
+  assert.equal(
+    (
+      await request(`appointments/bookings/${pending.body.id}`, "PATCH", {
+        revision: 0,
+        status: "declined",
+      })
+    ).status,
+    200,
+  );
+});
+
 test("concurrent acceptance and decline cannot both succeed", async () => {
   const day = fixture(),
     r = await book(bookingInput(choice(day)));
@@ -856,6 +1057,57 @@ test("customer records link bookings atomically and private notes remain private
     (await request(`appointments/bookings/${r.body.id}`)).status,
     404,
   );
+});
+
+test("response pagination and CSV export include records beyond 5,000 with tied timestamps", async () => {
+  fixture();
+  const first = await request("public/enquiry/submit", "POST", submission());
+  assert.equal(first.status, 201);
+  const insert =
+    sqlite.prepare(`INSERT INTO submissions(id,business_id,form_id,version,snapshot,receipt,idempotency,payload_hash,token_hash,customer,summary,total,created_at)
+    SELECT ?,business_id,form_id,version,snapshot,receipt,?,payload_hash,token_hash,customer,summary,total,created_at FROM submissions WHERE id=?`);
+  sqlite.exec("BEGIN");
+  for (let i = 0; i < 5006; i++)
+    insert.run(
+      "page-" + String(i).padStart(5, "0"),
+      randomUUID(),
+      first.body.id,
+    );
+  sqlite.exec("COMMIT");
+  const ids = new Set();
+  let cursor = null;
+  do {
+    const page = await request(
+      "responses?limit=100" +
+        (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
+    );
+    assert.equal(page.status, 200);
+    assert.equal(page.body.total, 5007);
+    for (const row of page.body.responses) {
+      assert.ok(!ids.has(row.id));
+      assert.ok(!("token_hash" in row));
+      ids.add(row.id);
+    }
+    cursor = page.body.nextCursor;
+  } while (cursor);
+  assert.equal(ids.size, 5007);
+  assert.equal((await request("responses?cursor=bad")).status, 400);
+  assert.equal((await request("responses?limit=1000")).status, 400);
+  const csv = await route.GET(
+    new Request("http://localhost/api/responses/export"),
+  );
+  assert.equal(csv.status, 200);
+  const text = await csv.text();
+  assert.equal((text.match(/"page-\d{5}"/g) || []).length, 5006);
+  globalThis.__appointmentTestUser = {
+    userId: "other",
+    email: "other@example.test",
+  };
+  assert.equal((await request("responses")).body.total, 0);
+  const isolated = await route.GET(
+    new Request("http://localhost/api/responses/export"),
+  );
+  assert.ok(!(await isolated.text()).includes("page-"));
 });
 
 test("owner-created appointments use availability guards and are confirmed immediately", async () => {

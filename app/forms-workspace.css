@@ -779,3 +779,20 @@
 .inspector-heading .section-kicker {
   font-size: 9px;
 }
+
+.response-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+.response-pagination > span {
+  color: var(--muted-foreground, #64748b);
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .response-pagination { justify-content: center; gap: 8px; padding: 12px; }
+}

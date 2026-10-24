@@ -1,5 +1,9 @@
 # Verification record
 
+For the 24 October 2026 lint cleanup and responsive forms/appointments/embed/widget checks, see [Browser QA](./BROWSER_QA.md). Lint now passes with **0 errors and 0 warnings**; physical mobile devices, Safari and Firefox remain unverified.
+
+For the 23 October 2026 production remediation, current test results and remaining hosted gates, see [Production readiness](./PRODUCTION_READINESS.md). The records below describe earlier verification runs.
+
 Executed locally on 26–27 September 2026. Uses a real local D1/SQLite database and R2 emulator, not simulated dashboard data.
 
 ## Automated checks

@@ -5,6 +5,7 @@ export function usePublicEmbed(kind: "form" | "appointment", id: string) {
   const [mode, setMode] = useState({ embedded: false, inline: false });
   useEffect(() => {
     const q = new URLSearchParams(location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setMode({
       embedded: q.get("embed") === "1",
       inline: q.get("embed") === "1" && q.get("resize") === "1",

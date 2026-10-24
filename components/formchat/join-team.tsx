@@ -1,10 +1,16 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Full navigation resets hash-based workspace and authentication state. */
 "use client";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Users, ArrowRight } from "lucide-react";
 import { api } from "@/lib/client";
 import Brand from "./brand";
 export default function JoinTeam({ token }: { token: string }) {
-  const [data, setData] = useState<any>(null);
+  const router = useRouter();
+  const [data, setData] = useState<{
+    businessName: string;
+    name: string;
+  } | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,7 +48,7 @@ export default function JoinTeam({ token }: { token: string }) {
                   setError("");
                   try {
                     await api(`invitations/${token}`, "POST", {});
-                    location.href = "/";
+                    router.push("/");
                   } catch (e) {
                     setError((e as Error).message);
                     setBusy(false);

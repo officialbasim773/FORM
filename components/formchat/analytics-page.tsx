@@ -13,7 +13,7 @@ export default function AnalyticsPage({
   business: Business;
   forms: FormRecord[];
 }) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<{events:Record<string,number>;submissions:number;handoffs:number;trend:{day:string;n:number}[];eventTrend:{day:string;kind:string;n:number}[];top:{id:string;title:string;deleted:number;n:number}[]} | null>(null);
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState("");
   useEffect(() => {
@@ -55,11 +55,11 @@ export default function AnalyticsPage({
     const day = d.toISOString().slice(0, 10);
     return {
       day,
-      n: data?.trend.find((t: any) => t.day === day)?.n || 0,
+      n: data?.trend.find((t) => t.day === day)?.n || 0,
       view:
         data?.eventTrend
-          .filter((t: any) => t.day === day && t.kind === "view")
-          .reduce((n: number, t: any) => n + t.n, 0) || 0,
+          .filter((t) => t.day === day && t.kind === "view")
+          .reduce((n: number, t) => n + t.n, 0) || 0,
     };
   });
   const max = Math.max(1, ...days.flatMap((d) => [d.n, d.view]));
@@ -163,7 +163,7 @@ export default function AnalyticsPage({
           <div className="analytics-bottom">
             <section className="panel">
               <h3>Most-used forms</h3>
-              {data.top.map((f: any, i: number) => (
+              {data.top.map((f, i: number) => (
                 <div className="top-form" key={f.id}>
                   <span>{String(i + 1).padStart(2, "0")}</span>
                   <strong>

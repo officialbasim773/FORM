@@ -1,3 +1,4 @@
+import NextImage from "next/image";
 import {
   ArrowUpRight,
   Check,
@@ -125,7 +126,13 @@ export default function Landing({ signedIn = false }: { signedIn?: boolean }) {
     <main className="fc-marketing">
       <nav className="mk-nav" aria-label="Main navigation">
         <a className="mk-brand" href="/about">
-          <img src="/favicon.svg" alt="" width={31} height={31} />
+          <NextImage
+            unoptimized
+            src="/favicon.svg"
+            alt=""
+            width={31}
+            height={31}
+          />
           {PRODUCT_NAME}
         </a>
         <div className="mk-nav-links">
@@ -522,7 +529,13 @@ export default function Landing({ signedIn = false }: { signedIn?: boolean }) {
       <footer className="mk-footer mk-container">
         <div>
           <a className="mk-brand" href="/about">
-            <img src="/favicon.svg" alt="" width={31} height={31} />
+            <NextImage
+              unoptimized
+              src="/favicon.svg"
+              alt=""
+              width={31}
+              height={31}
+            />
             {PRODUCT_NAME}
           </a>
           <p>

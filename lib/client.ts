@@ -1,4 +1,7 @@
 import { readApiResponse } from "./api-response";
+// Dynamic endpoints are progressively typed at their call sites. Keep this
+// compatibility boundary isolated from domain and database models.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -44,7 +47,7 @@ export async function upload(file: File) {
     headers: { "Content-Type": "image/webp" },
     body: blob,
   });
-  const data: any = await readApiResponse(res);
+  const data = await readApiResponse<{url:string}>(res);
   return data.url as string;
 }
 export async function copy(text: string) {

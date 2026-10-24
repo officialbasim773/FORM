@@ -15,7 +15,7 @@ npm run db:migrate
 npm start
 ```
 
-Open http://localhost:5174 and create an account with email and password. Verify the address using the emailed link before signing in. `db:migrate` applies pending SQL migrations only to the local D1 database in `.wrangler/state`; production needs its own migration step. Preserve that directory to keep local data.
+Open http://localhost:5174 and create an account with email and password. Verify the address using the emailed link before signing in. `db:migrate` applies pending SQL migrations to the local D1 database in `.wrangler/state`; `db:migrate:production` targets validated production bindings. Preserve that directory to keep local data.
 
 ### Demo data
 
@@ -70,9 +70,11 @@ All supported currencies currently use two decimal minor units: USD, AED, EUR, G
 
 This checkout runs locally and has **not been deployed**. Better Auth stores users and sessions in D1, requires verified email for owner and team access, and sends verification/reset messages through Better Auth Infrastructure. Public customer forms remain anonymous. Legacy Sites identity headers are ignored.
 
-For Cloudflare Workers deployment, bind D1 as `DB` and R2 as `BUCKET`; set `BETTER_AUTH_URL` to the public HTTPS origin and store `BETTER_AUTH_SECRET` and `BETTER_AUTH_API_KEY` as Worker secrets. Apply all `drizzle/*.sql` migrations to production D1 before routing traffic. Better Auth Infrastructure transactional email is available on its Pro plan and above; if the project lacks that service, connect another email provider before allowing registration. The app's existing demo owners use old IDs and need an explicit ownership migration if their data should remain accessible after login. Do not seed demo identities into production.
+For Cloudflare Workers deployment, bind D1 as `DB` and R2 as `BUCKET`; set `BETTER_AUTH_URL` to the public HTTPS origin and store `BETTER_AUTH_SECRET` and `BETTER_AUTH_API_KEY` as Worker secrets. Apply all `drizzle/*.sql` migrations to production D1 before routing traffic. Enable transactional email in the connected Infrastructure project, configure its sender, and verify delivery to a controlled inbox before allowing public registration. The app's existing demo owners use old IDs and need an explicit ownership migration if their data should remain accessible after login. Do not seed demo identities into production.
 
-The older API integration suites still create synthetic Sites identity headers and must be migrated to verified Better Auth test sessions before they can be used as regression gates. `npm run test:auth` checks anonymous access and rejects forged identity headers against a locally running Worker. Billing is not connected.
+The API integration suites provision isolated local verified Better Auth accounts and use real session cookies. Tests are restricted to localhost. `npm run test:auth` checks anonymous access and rejects forged identity headers against a locally running Worker. Billing is not connected.
+
+See [Production release and recovery](./PRODUCTION_OPERATIONS.md) for provisioned infrastructure configuration, fail-closed production builds, migrations, email verification, backups, restoration, rollback and monitoring.
 
 ## Security and data handling
 
@@ -82,7 +84,7 @@ The older API integration suites still create synthetic Sites identity headers a
 - PNG/JPEG/WebP upload signatures and size limits. Browser uploads are resized/re-encoded to WebP; image responses use a restrictive content policy and `nosniff`. Uploaded images are public assets with unguessable URLs.
 - CSV formula-injection protection. Confirmations for form, response and workspace deletion.
 
-Bot protection is basic; no external CAPTCHA, malware scanning or delivery verification is connected. Local customer drafts use session storage; views use a random browser-local identifier. Workspace deletion removes its stored records and uploads. Form deletion is a soft delete; response and workspace deletion are permanent.
+Bot protection is basic; no external CAPTCHA, malware scanning or delivery verification is connected. Local customer drafts use session storage; views use a random browser-local identifier. Workspace deletion removes stored records and durably queues image deletion. Failed R2 deletions are retried by the five-minute production maintenance schedule; monitor pending cleanup jobs. Form deletion is a soft delete; response and workspace deletion are permanent.
 
 ## Verification
 
@@ -95,7 +97,7 @@ npm start
 npm run test:auth
 ```
 
-Run `npm run test:auth` in a second terminal while the built Worker is running. The older `test:integration`, `test:team-flow`, `test:experiences`, `test:media`, and `test:workflow` suites require conversion from synthetic identity headers to real Better Auth sessions.
+Run `npm run test:auth` in a second terminal while the built Worker is running. The `test:integration`, `test:team-flow`, `test:experiences`, `test:media`, `test:workflow`, `test:forms-core` and `test:forms-logic` suites use real local verified sessions. `test:operations` checks health/headers and rehearses database plus R2 restoration with an uploaded image.
 
 See `VERIFICATION.md` for the executed checks and `outputs/` for desktop/mobile screenshots.
 
@@ -103,7 +105,7 @@ See `VERIFICATION.md` for the executed checks and `outputs/` for desktop/mobile 
 
 - Billing is an honest placeholder. No payments, WhatsApp delivery tracking, stock reservations, tax or delivery-fee calculation.
 - Custom domains are not supported in this release.
-- Response listing and CSV export are capped at 5,000 records per query; there is no cursor pagination yet.
+- Responses use stable cursor pagination (50 by default, maximum 100 per page) with Previous/Next controls and a filtered total. CSV export streams all matching rows in batches of 100, with no 5,000-record cap. Export excludes records created after its initial high-water key; concurrent edits/deletions are not a database-wide snapshot.
 - Analytics are browser-identifier based, not person-identity analytics. Clearing storage can count a new visitor. A handoff click proves only that the link was clicked.
 - Native WhatsApp app launch and sending require the customer's device; no message was sent during testing. Hosted authentication/deployment and real payments have not been exercised.
 
@@ -115,7 +117,7 @@ See `VERIFICATION.md` for the executed checks and `outputs/` for desktop/mobile 
 - Routing supports the owner, a fixed active member, round robin across selected active members, or ordered answer rules. The first matching answer rule wins. Missing matches or removed members fall back to the business owner. Round robin uses an atomic database counter; failed or concurrent duplicate attempts can advance the counter without creating another request.
 - Responses include grouped answer cards, itemized product details, saved price estimates, handoff state, and assignee filtering. Owners can reassign inbox access. Reassignment deliberately preserves the originally saved WhatsApp destination in the customer receipt.
 
-Apply migration `0002_outgoing_agent_brand.sql` with `npm run db:migrate`. Run `npm run test:team-flow` against the local built server on port 5174 to test invitations, authorization, routing and conditional submission behavior. Hosted deployment still requires the trusted authentication gateway described above; invitations cannot provide real multi-user authentication through the local fixed-user demo alone.
+Apply migration `0002_outgoing_agent_brand.sql` with `npm run db:migrate`. Run `npm run test:team-flow` against the local built server on port 5174 to test invitations, authorization, routing and conditional submission behavior. Hosted owner and member access both require verified Better Auth sessions; invitation email addresses must match the signed-in account.
 
 ### Form experiences
 
@@ -266,3 +268,7 @@ Widget configuration and typography selectors have matching 44px fields, visible
 ### Floating appointment widget
 
 In Appointments, select **Website widget** beside Website embed. Set the button label, corner and colour, then copy the script before the host’s closing `</body>` tag. The `data-booking` attribute opens the independent public appointment flow; existing `data-form` widget snippets still work. Preferences are remembered in this browser. Test widget opens a real preview with service selection, dates and times; submitting creates a real request. Requests still require owner approval, and no WhatsApp handoff is added. The widget loads only when opened, isolates its styles, and supports close, Escape from a customer field, and a new-tab alternative. Use one floating button per corner when installing multiple widgets.
+
+### Responsive QA and lint — October 24, 2026
+
+Lint is enforced with zero warnings. Hook dependencies, draft recovery and embed measurement were reviewed; booking embeds now fit narrow website columns and mobile workspace fields use 16 px text. See [Browser QA](./BROWSER_QA.md) for the tested workflows, evidence and remaining Safari/Firefox/physical-device checks. Run `npm run test:browser-fixtures` with the local app on port 5174 to provision disposable forms/bookings and a separate website host on port 5180; press Enter in that terminal to clean up afterwards.

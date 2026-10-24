@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import NextImage from "next/image";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,15 +15,12 @@ import {
   ExternalLink,
   Link2,
   Download,
-  GripVertical,
   Package,
   Palette,
   FileText,
   Smartphone,
-  RefreshCw,
   Inbox,
   Settings,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
@@ -32,12 +30,11 @@ import {
   FormRecord,
   Product,
   Question,
-  readableText,
   toMinor,
   money,
   formPages,
 } from "@/lib/model";
-import { CURRENCIES, PRESETS, QUESTION_TYPES, PLANS } from "@/lib/config";
+import { CURRENCIES, QUESTION_TYPES } from "@/lib/config";
 import { api, copy } from "@/lib/client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Picker, Toggle, Modal, ImagePicker } from "./ui";
@@ -68,6 +65,7 @@ export function Share({
   const [url, setUrl] = useState("");
   useEffect(() => {
     const u = location.origin + "/f/" + form.slug;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setUrl(u);
     QRCode.toDataURL(u, {
       width: 400,
@@ -85,7 +83,15 @@ export function Share({
       onClose={onClose}
     >
       <div className="share-qr">
-        {qr && <img src={qr} alt="QR code linking to your published form" />}
+        {qr && (
+          <NextImage
+            unoptimized
+            width={240}
+            height={240}
+            src={qr}
+            alt="QR code linking to your published form"
+          />
+        )}
       </div>
       <label>
         Public form link
@@ -130,6 +136,7 @@ function Price({
   onChange: (n: number) => void;
 }) {
   const [text, setText] = useState((value / 100).toFixed(2));
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
   useEffect(() => setText((value / 100).toFixed(2)), [value]);
   return (
     <label>
@@ -173,7 +180,17 @@ function ProductEditor({
         onClick={() => setExpanded(!expanded)}
       >
         <span className="catalog-thumb">
-          {p.image ? <img src={p.image} alt="" /> : <Package size={24} />}
+          {p.image ? (
+            <NextImage
+              unoptimized
+              width={1200}
+              height={800}
+              src={p.image}
+              alt=""
+            />
+          ) : (
+            <Package size={24} />
+          )}
         </span>
         <span className="catalog-name">
           <strong>{p.name || "Untitled product"}</strong>
@@ -313,7 +330,7 @@ function ProductEditor({
             >
               Add size choices
             </button>
-            {p.options.map((o, index) => (
+            {p.options.map((o) => (
               <div className="option-editor" key={o.id}>
                 <div className="row">
                   <label className="grow">
@@ -564,7 +581,9 @@ export default function Builder({
   const [previewWidth, setPreviewWidth] = useState("390");
   const [ready, setReady] = useState(false);
   const latest = useRef(draft);
-  latest.current = draft;
+  useEffect(() => {
+    latest.current = draft;
+  }, [draft]);
   const revision = useRef(initial.revision);
   const saved = useRef(JSON.stringify(initial.draft));
   const queue = useRef(Promise.resolve());
@@ -572,21 +591,23 @@ export default function Builder({
     undefined,
   );
   const recoveryKey = `formchat:owner-draft:${initial.id}`;
+  const [recoveryRevision] = useState(initial.revision);
   useEffect(() => {
     try {
       const recovered = JSON.parse(localStorage.getItem(recoveryKey) || "null");
       if (
         recovered &&
-        recovered.revision === initial.revision &&
+        recovered.revision === recoveryRevision &&
         JSON.stringify(recovered.draft) !== saved.current
       ) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
         setDraft(recovered.draft);
         toast.info("Your unsaved draft was restored.");
       }
     } catch {}
     setReady(true);
-  }, []);
-  function save() {
+  }, [recoveryRevision, recoveryKey]);
+  const save = useCallback(() => {
     const snapshot = structuredClone(latest.current);
     const serialized = JSON.stringify(snapshot);
     const task = queue.current
@@ -626,7 +647,7 @@ export default function Builder({
     });
     queue.current = guarded;
     return guarded;
-  }
+  }, [initial.id, onUpdated, recoveryKey]);
   useEffect(() => {
     if (!ready || busy || JSON.stringify(draft) === saved.current) return;
     setStatus("Unsaved changes");
@@ -646,7 +667,7 @@ export default function Builder({
     );
     autosaveTimer.current = timer;
     return () => clearTimeout(timer);
-  }, [draft, ready, busy]);
+  }, [draft, ready, busy, recoveryKey, save]);
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (JSON.stringify(latest.current) !== saved.current) {

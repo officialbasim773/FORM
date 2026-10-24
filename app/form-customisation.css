@@ -1024,4 +1024,10 @@ input[type="file"].sr-only {
   .booking-embedded {
     padding: 0 12px;
   }
+  .workspace-main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    font-size: 16px;
+  }
+  .workspace-main .forms-app .editable-option-label .choice-label-input {
+    font-size: 16px !important;
+  }
 }

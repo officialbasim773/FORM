@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import { useEffect, useState } from "react";
 import {
   Copy,
@@ -31,6 +32,7 @@ export default function FormSharing({
   useEffect(() => {
     let live = true;
     const value = location.origin + "/f/" + form.slug;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setUrl(value);
     QRCode.toDataURL(value, {
       width: 640,
@@ -58,6 +60,7 @@ export default function FormSharing({
       );
       if (saved) {
         if (typeof saved.label === "string")
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
           setWidgetLabel(saved.label.slice(0, 60));
         if (saved.position === "left" || saved.position === "right")
           setWidgetSide(saved.position);
@@ -344,7 +347,10 @@ export default function FormSharing({
                 materials.
               </p>
               {qr && (
-                <img
+                <NextImage
+                  unoptimized
+                  width={240}
+                  height={240}
                   className="sharing-qr"
                   src={qr}
                   alt="QR code for this form"

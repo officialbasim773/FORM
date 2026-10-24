@@ -1205,3 +1205,25 @@
 }
 .appointment-settings-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .appointment-settings-fields:disabled { opacity: .7; }
+
+/* An iframe's viewport may be much narrower than a phone's full screen. */
+@media (max-width: 400px) {
+  .book-progress {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .book-progress > span { min-width: 0; white-space: normal; font-size: 11px; }
+  .book-progress b { flex-shrink: 0; }
+  .book-brand { flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+  .book-brand a { min-width: 0; }
+  .book-brand strong { overflow-wrap: anywhere; }
+  .book-main { padding: 20px 12px; }
+  .book-service-card { padding: 12px; gap: 8px; }
+  .book-service-card > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
+  .book-service-card small { flex-wrap: wrap; gap: 5px; }
+  .book-service-card > svg { flex-shrink: 0; }
+  .book-service-symbol { width: 28px; height: 28px; }
+  .book-bottom { flex-wrap: wrap; }
+  .book-confirmation code { white-space: normal; overflow-wrap: anywhere; }
+}

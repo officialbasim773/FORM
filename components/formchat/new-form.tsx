@@ -10,7 +10,7 @@ import {
   LayoutTemplate,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Business, FormRecord } from "@/lib/model";
+import { FormRecord } from "@/lib/model";
 import { TEMPLATES } from "@/lib/templates";
 import { api } from "@/lib/client";
 import { Modal } from "./ui";

@@ -21,6 +21,7 @@ export default function AppointmentWidget({
     color: "#176650",
   });
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setOrigin(location.origin);
     try {
       const saved = JSON.parse(

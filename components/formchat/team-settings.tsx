@@ -19,6 +19,7 @@ export default function TeamSettings() {
     setMembers(r.members);
   }
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     refresh().catch((e) => setError(e.message));
   }, []);
   return (

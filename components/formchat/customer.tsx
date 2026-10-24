@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import { usePublicEmbed } from "@/lib/use-public-embed";
 import { formAppearance, appearanceVariables } from "@/lib/form-appearance";
 import { formatAppointment } from "@/lib/appointments";
@@ -36,7 +37,10 @@ import { Toaster, toast } from "sonner";
 function FormImage({ media }: { media: FormMedia }) {
   return (
     <figure className="form-media">
-      <img
+      <NextImage
+        unoptimized
+        width={1200}
+        height={800}
         src={media.src}
         alt={media.alt}
         style={{ objectFit: media.fit }}
@@ -124,13 +128,14 @@ function CustomerContent({
     visitor: "",
     idempotency: "",
     token: "",
-    startedAt: Date.now(),
+    startedAt: 0,
   });
   const started = useRef(false);
   const scrollTop = useRef<HTMLDivElement>(null);
   const key = `formchat:${slug}:draft`;
   useEffect(() => {
     if (preview) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
       setRestored(true);
       return;
     }
@@ -265,17 +270,18 @@ function CustomerContent({
       ? visible
       : visible.filter((q) => (q.pageId || allPages[0].id) === currentPage.id);
   const lastPage = step === pages.length - 1;
+  const previewTargetIndex = pages.findIndex((p) => p.id === previewQuestionId);
   useEffect(() => {
     if (preview && previewQuestionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
       setWelcomed(true);
       setPreviewReview(false);
-      const index = pages.findIndex((p) => p.id === previewQuestionId);
-      if (index >= 0) setPageIndex(index);
+      if (previewTargetIndex >= 0) setPageIndex(previewTargetIndex);
     } else if (preview) {
       setPageIndex(0);
       setPreviewReview(false);
     }
-  }, [previewQuestionId, preview, experience]);
+  }, [previewQuestionId, preview, experience, previewTargetIndex]);
   const previousExperience = useRef(experience);
   useEffect(() => {
     if (previousExperience.current !== experience) {
@@ -293,7 +299,7 @@ function CustomerContent({
         )
         ?.focus({ preventScroll: true });
     }
-  }, [currentPage.id, welcomed, interactive, preview]);
+  }, [currentPage.id, welcomed, interactive, preview, settings.welcome]);
   function validateStep() {
     if (interactive) {
       validateAnswers(
@@ -560,7 +566,13 @@ function CustomerContent({
       <div className="customer-business">
         {!draft.hideLogo &&
           (business.logo ? (
-            <img src={business.logo} alt={`${business.name} logo`} />
+            <NextImage
+              unoptimized
+              width={96}
+              height={96}
+              src={business.logo}
+              alt={`${business.name} logo`}
+            />
           ) : (
             <span
               className="business-monogram"
@@ -751,7 +763,10 @@ function CustomerContent({
                       key={p.id}
                     >
                       {p.image && (
-                        <img
+                        <NextImage
+                          unoptimized
+                          width={1200}
+                          height={800}
                           className="product-image"
                           src={p.image}
                           alt={p.name}
@@ -1106,7 +1121,10 @@ function CustomerContent({
                             }}
                           />
                           {q.choiceStyle !== "text" && q.optionImages?.[o] && (
-                            <img
+                            <NextImage
+                              unoptimized
+                              width={1200}
+                              height={800}
                               style={{ objectFit: q.choiceImageFit || "cover" }}
                               className="answer-choice-image"
                               src={q.optionImages[o]}
@@ -1163,7 +1181,10 @@ function CustomerContent({
                             }}
                           />
                           {q.choiceStyle !== "text" && q.optionImages?.[o] && (
-                            <img
+                            <NextImage
+                              unoptimized
+                              width={1200}
+                              height={800}
                               style={{ objectFit: q.choiceImageFit || "cover" }}
                               className="answer-choice-image"
                               src={q.optionImages[o]}
@@ -1338,7 +1359,11 @@ export default function Customer(
 }
 export function PublicForm({ slug }: { slug: string }) {
   const { embedded, inline } = usePublicEmbed("form", slug);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<{
+    form: Draft;
+    business: Business;
+    version: number;
+  } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     api(`public/${slug}`)

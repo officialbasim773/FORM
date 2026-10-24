@@ -1,9 +1,10 @@
 "use client";
+import type { InboxResponse } from "@/lib/response-pagination";
 import { Copy, FileText, Package, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { copy } from "@/lib/client";
 import { Receipt, money } from "@/lib/model";
-export default function ResponseAnswers({ response: r }: { response: any }) {
+export default function ResponseAnswers({ response: r }: { response: InboxResponse }) {
   const receipt: Receipt = r.receipt;
   const groups = [
     ...new Set(receipt.answers.map((a) => a.page || "Customer details")),

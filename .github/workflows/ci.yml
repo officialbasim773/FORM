@@ -1,0 +1,40 @@
+name: Production checks
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run db:migrate
+      - name: Local API and recovery checks
+        shell: bash
+        run: |
+          printf 'BETTER_AUTH_SECRET=%s\nBETTER_AUTH_URL=http://localhost:5174\n' "$(openssl rand -hex 32)" > .dev.vars
+          npm start > .sites-runtime/ci-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:5174/healthz; then break; fi
+            sleep 1
+          done
+          npm run test:auth
+          npm run test:forms-core
+          npm run test:forms-logic
+          npm run test:experiences
+          npm run test:team-flow
+          npm run test:integration
+          npm run test:media
+          npm run test:workflow
+          npm run test:booking-approval
+          npm run test:operations

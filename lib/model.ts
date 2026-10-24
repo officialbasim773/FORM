@@ -589,7 +589,7 @@ export function validateAnswers(
     .filter((q) => !questionIds || questionIds.includes(q.id))
     .filter((q) => !pageId || (q.pageId || formPages(draft)[0].id) === pageId)
     .map((q) => {
-      let v = answers[q.id] ?? (q.type === "multiple choice" ? [] : "");
+      const v = answers[q.id] ?? (q.type === "multiple choice" ? [] : "");
       if (q.type === "multiple choice") {
         if (
           !Array.isArray(v) ||

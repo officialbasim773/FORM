@@ -8,9 +8,11 @@ export class ApiError extends Error {
   }
 }
 /** Worker/proxy failures can be plain text or HTML, including on JSON endpoints. */
+// Generic callers provide an endpoint contract; legacy callers share api() compatibility.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readApiResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
-  let data: any;
+  let data: unknown;
   try {
     data = text ? JSON.parse(text) : undefined;
   } catch {
@@ -20,7 +22,7 @@ export async function readApiResponse<T = any>(res: Response): Promise<T> {
     const message =
       res.status === 401
         ? "Your session has expired. Sign in again to save your changes."
-        : typeof data?.error === "string"
+        : typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
           ? data.error
           : res.status === 429
             ? "Too many requests. Wait a moment, then try again."

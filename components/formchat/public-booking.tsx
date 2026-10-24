@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import { usePublicEmbed } from "@/lib/use-public-embed";
 import { readApiResponse } from "@/lib/api-response";
 import { useEffect, useRef, useState } from "react";
@@ -81,6 +82,7 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
   useEffect(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(key) || "null");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
       if (saved?.receipt) setReceipt(saved.receipt);
       if (saved?.pending) {
         pending.current = saved.pending;
@@ -108,6 +110,7 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
   useEffect(() => {
     if (!data || !service || !provider || !month || step !== 1) return;
     let alive = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setDatesLoading(true);
     setDates([]);
     api(
@@ -122,6 +125,7 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
   }, [businessId, data, service, provider, month, refresh, step]);
   useEffect(() => {
     if (step !== 1) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setSlots([]);
     setStart("");
     setLoading(false);
@@ -148,11 +152,11 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: receipt.id, token: receipt.token }),
       });
-      const result: any = await (async () => {
+      const result: Confirmation & { error?: string } = await (async () => {
         try {
           return await readApiResponse(response);
         } catch (e) {
-          if (!response.ok) return { error: (e as Error).message };
+          if (!response.ok) throw new Error((e as Error).message);
           throw e;
         }
       })();
@@ -192,11 +196,11 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const result: any = await (async () => {
+      const result: Confirmation & { error?: string } = await (async () => {
         try {
           return await readApiResponse(response);
         } catch (e) {
-          if (!response.ok) return { error: (e as Error).message };
+          if (!response.ok) throw new Error((e as Error).message);
           throw e;
         }
       })();
@@ -232,7 +236,13 @@ export default function PublicBooking({ businessId }: { businessId: string }) {
         aria-label={`${name} booking page`}
       >
         {data?.business.logo ? (
-          <img src={data.business.logo} alt="" />
+          <NextImage
+            unoptimized
+            width={96}
+            height={96}
+            src={data.business.logo}
+            alt=""
+          />
         ) : (
           <span>{name.slice(0, 1)}</span>
         )}

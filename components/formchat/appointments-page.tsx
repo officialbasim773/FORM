@@ -1,4 +1,5 @@
 "use client";
+import type { AppointmentCustomer, Booking } from "@/lib/records";
 import { useEffect, useRef, useState } from "react";
 import {
   CalendarDays,
@@ -172,7 +173,7 @@ export default function AppointmentsPage({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [tab, setTab] = useState("bookings");
   const [routeId, setRouteId] = useState("");
-  const [newCustomer, setNewCustomer] = useState<any>(null);
+  const [newCustomer, setNewCustomer] = useState<AppointmentCustomer | null>(null);
   const [showEmbed, setShowEmbed] = useState(false);
   const [showWidget, setShowWidget] = useState(false);
   useEffect(() => {
@@ -205,7 +206,7 @@ export default function AppointmentsPage({
   const [busy, setBusy] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [bookings, setBookings] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [savedZone, setSavedZone] = useState("UTC");
@@ -227,15 +228,17 @@ export default function AppointmentsPage({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
   const view = tab === "calendar" ? "calendar" : "list";
-  const [editing, setEditing] = useState<any>(null);
+  const [editing, setEditing] = useState<Booking | null>(null);
   const [provider, setProvider] = useState("");
   const [date, setDate] = useState("");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slot, setSlot] = useState("");
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
+    let active = true;
     api("appointments/settings")
       .then((r) => {
+        if (!active) return;
         let recovered: Settings | null = null;
         try {
           recovered = JSON.parse(sessionStorage.getItem(recoveryKey) || "null");
@@ -263,11 +266,13 @@ export default function AppointmentsPage({
             .slice(0, 10),
         );
       })
-      .catch((e) => setError(e.message));
-  }, []);
+      .catch((e) => active && setError(e.message));
+    return () => { active = false; };
+  }, [recoveryKey]);
   useEffect(() => {
     if (!from || !to) return;
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setError("");
     api(
       `appointments/bookings?${tab === "requests" ? "status=pending" : new URLSearchParams({ from, to })}`,
@@ -279,6 +284,7 @@ export default function AppointmentsPage({
     };
   }, [from, to, refresh, tab]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setSlots([]);
     setSlot("");
     if (!editing || !date || !provider) return;
@@ -292,7 +298,7 @@ export default function AppointmentsPage({
       active = false;
     };
   }, [editing, date, provider]);
-  async function action(b: any, data: any) {
+  async function action(b: Booking, data: {status?:string;appointment?:{serviceId:string;providerId:string;start:string}}) {
     setBusy(true);
     setError("");
     setNotice("");
@@ -343,7 +349,7 @@ export default function AppointmentsPage({
   };
   const providerName = (id: string) =>
     settings.team.find((p) => p.id === id)?.name || "Inactive team member";
-  const cards = (rows: any[]) =>
+  const cards = (rows: Booking[]) =>
     rows.map((b) => (
       <article
         className={`panel appointment-card status-${b.status}`}
@@ -387,7 +393,7 @@ export default function AppointmentsPage({
               <strong>Notes:</strong> {b.details.notes}
             </p>
           )}
-          {b.details.answers?.map((a: any, i: number) => (
+          {b.details.answers?.map((a, i: number) => (
             <p key={i}>
               <strong>{a.label}:</strong>{" "}
               {Array.isArray(a.value) ? a.value.join(", ") : a.value}

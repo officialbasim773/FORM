@@ -10,7 +10,7 @@
   try {
     service = new URL(script.src).origin;
     if (!/^https?:\/\//.test(service)) return;
-  } catch (_) {
+  } catch {
     return;
   }
   var label = (

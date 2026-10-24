@@ -1,3 +1,4 @@
+import type { AppointmentCustomer, StoredBooking } from "./records";
 import { z } from "zod";
 import { body, db, HttpError, json } from "./server";
 import type { Business } from "./model";
@@ -63,7 +64,7 @@ export async function customerApi(req: Request, b: Business, path: string[]) {
   const row = await db()
     .prepare("SELECT * FROM appointment_customers WHERE id=? AND business_id=?")
     .bind(path[0] || "", b.id)
-    .first<any>();
+    .first<AppointmentCustomer>();
   if (!row) throw new HttpError(404, "Customer not found.");
   if (req.method === "GET") {
     const bookings = await db()
@@ -71,7 +72,7 @@ export async function customerApi(req: Request, b: Business, path: string[]) {
         "SELECT id,status,start,end,timezone,details,revision FROM bookings WHERE business_id=? AND customer_id=? ORDER BY start DESC LIMIT 500",
       )
       .bind(b.id, row.id)
-      .all<any>();
+      .all<StoredBooking>();
     return json({
       customer: row,
       bookings: bookings.results.map((x) => ({

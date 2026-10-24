@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Eye, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { copy } from "@/lib/client";
@@ -21,6 +21,7 @@ export default function WebsiteEmbed({
   const [preview, setPreview] = useState(false);
   const [contentHeight, setContentHeight] = useState(320);
   const frame = useRef<HTMLIFrameElement>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
   useEffect(() => setOrigin(location.origin), []);
   const number = Number(height),
     valid =
@@ -32,13 +33,17 @@ export default function WebsiteEmbed({
           maxWidth: width,
         })
       : null;
-  const request = () =>
-    frame.current?.contentWindow?.postMessage(
-      { type: "formchat:measure", kind, id },
-      origin,
-    );
+  const request = useCallback(
+    () =>
+      frame.current?.contentWindow?.postMessage(
+        { type: "formchat:measure", kind, id },
+        origin,
+      ),
+    [origin, kind, id],
+  );
   useEffect(() => {
     if (!preview || !auto || !origin) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setContentHeight(320);
     const receive = (e: MessageEvent) => {
       if (
@@ -63,7 +68,7 @@ export default function WebsiteEmbed({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [preview, auto, origin, kind, id]);
+  }, [preview, auto, origin, kind, id, request]);
   return (
     <section className="website-embed">
       <p>

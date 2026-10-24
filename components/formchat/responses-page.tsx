@@ -1,5 +1,6 @@
 "use client";
 import { formatAppointment } from "@/lib/appointments";
+import type { InboxResponse } from "@/lib/response-pagination";
 import ResponseAnswers from "./response-answers";
 import { useEffect, useState } from "react";
 import {
@@ -9,7 +10,6 @@ import {
   Trash2,
   ChevronRight,
   Download,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -31,10 +31,6 @@ import { Business, FormRecord, TeamMember, money } from "@/lib/model";
 import { PLANS } from "@/lib/config";
 import { api } from "@/lib/client";
 import { Picker, Confirm, Loading } from "./ui";
-import { Share } from "./builder";
-import { ReceiptView } from "./customer";
-import Customer from "./customer";
-
 export default function ResponsesPage({
   forms,
   business,
@@ -52,7 +48,11 @@ export default function ResponsesPage({
         .then((r) => setMembers(r.members))
         .catch(() => {});
   }, [business.role]);
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<InboxResponse[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pages, setPages] = useState<(string | null)[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [workflow, setWorkflow] = useState("all");
@@ -63,7 +63,7 @@ export default function ResponsesPage({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [handoff, setHandoff] = useState("all");
-  const [detail, setDetail] = useState<any>(null);
+  const [detail, setDetail] = useState<InboxResponse | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [reload, setReload] = useState(0);
   const params = new URLSearchParams({
@@ -76,14 +76,26 @@ export default function ResponsesPage({
     ...(handoff !== "all" ? { handoff } : {}),
   }).toString();
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
+    setCursor(null);
+    setPages([]);
+  }, [params]);
+  useEffect(() => {
     let live = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setLoading(true);
     const timer = setTimeout(
       () =>
-        api("responses?" + params)
+        api(
+          "responses?" +
+            params +
+            (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""),
+        )
           .then((r) => {
             if (live) {
               setRows(r.responses);
+              setNextCursor(r.nextCursor);
+              setTotal(r.total);
               setError("");
             }
           })
@@ -95,7 +107,7 @@ export default function ResponsesPage({
       live = false;
       clearTimeout(timer);
     };
-  }, [params, reload]);
+  }, [params, reload, cursor]);
   return (
     <>
       <div className="page-title">
@@ -104,24 +116,27 @@ export default function ResponsesPage({
           <h1>Responses</h1>
           <p>The details are here. The conversation continues on WhatsApp.</p>
         </div>
-        <button
+        <a
           className="btn"
-          disabled={!PLANS[business.plan].csv}
+          aria-disabled={!PLANS[business.plan].csv}
+          href={
+            PLANS[business.plan].csv
+              ? "/api/responses/export?" + params
+              : undefined
+          }
+          download
           title={
             !PLANS[business.plan].csv
               ? "CSV export is included in Business"
               : undefined
           }
-          onClick={() => {
-            location.href = "/api/responses/export?" + params;
-          }}
         >
           <Download size={16} />
           Export CSV
           {!PLANS[business.plan].csv && (
             <span className="mini-plan">BUSINESS</span>
           )}
-        </button>
+        </a>
       </div>
       <div className="inbox-summary">
         <div>
@@ -323,6 +338,31 @@ export default function ResponsesPage({
             ))}
           </TableBody>
         </Table>
+        <nav className="response-pagination" aria-label="Response pages">
+          <button
+            className="btn"
+            disabled={loading || !pages.length}
+            onClick={() => {
+              setCursor(pages[pages.length - 1]);
+              setPages(pages.slice(0, -1));
+            }}
+          >
+            Previous
+          </button>
+          <span>
+            Page {pages.length + 1} · {total} requests
+          </span>
+          <button
+            className="btn"
+            disabled={loading || !nextCursor}
+            onClick={() => {
+              setPages([...pages, cursor]);
+              setCursor(nextCursor);
+            }}
+          >
+            Next
+          </button>
+        </nav>
         {loading ? (
           <Loading />
         ) : (
@@ -425,8 +465,8 @@ export default function ResponsesPage({
                   </p>
                   <p>
                     {formatAppointment(
-                      detail.booking_start,
-                      detail.booking_timezone,
+                      detail.booking_start!,
+                      detail.booking_timezone!,
                     )}
                   </p>
                   <small>Booking reference: {detail.booking_id}</small>
@@ -451,9 +491,9 @@ export default function ResponsesPage({
                           setDetail({
                             ...detail,
                             assigned_to: assignedTo,
-                            assigned_name: members.find(
-                              (m) => m.id === assignedTo,
-                            )?.name,
+                            assigned_name:
+                              members.find((m) => m.id === assignedTo)?.name ||
+                              null,
                           });
                           setReload((n) => n + 1);
                           toast.success("Assignment updated");
@@ -519,6 +559,7 @@ export default function ResponsesPage({
         onClose={() => setDeleting(false)}
         onConfirm={async () => {
           try {
+            if (!detail) return;
             await api("responses/" + detail.id, "DELETE");
             setDeleting(false);
             setDetail(null);

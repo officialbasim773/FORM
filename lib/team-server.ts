@@ -1,3 +1,4 @@
+import type { StoredMember } from "./records";
 import { z } from "zod";
 import { body, db, hash, HttpError, json, limited, owner } from "./server";
 import {
@@ -28,7 +29,7 @@ export async function invitation(req: Request, token: string) {
       "SELECT m.*,b.name business_name,b.owner FROM members m JOIN businesses b ON b.id=m.business_id WHERE invite_hash=? AND status='invited' AND expires_at>?",
     )
     .bind(await hash(token), new Date().toISOString())
-    .first<any>();
+    .first<StoredMember & {business_name:string;owner:string}>();
   if (!m)
     throw new HttpError(
       404,
@@ -100,7 +101,7 @@ export async function teamApi(req: Request, b: Business, id?: string) {
     const existing = await db()
       .prepare("SELECT status FROM members WHERE business_id=? AND email=?")
       .bind(b.id, x.email)
-      .first<any>();
+      .first<StoredMember>();
     if (existing?.status === "active")
       throw new HttpError(409, "This person is already a member.");
     const token =

@@ -249,3 +249,10 @@ export const appointmentActivity = sqliteTable("appointment_activity", {
   providerId: text("provider_id").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const authRates = sqliteTable('auth_rates', {
+  key:text('key').primaryKey(), count:integer('count').notNull(), expires:integer('expires').notNull(),
+}, t=>[index('auth_rates_expiry').on(t.expires)]);
+export const objectDeletions = sqliteTable('object_deletions', {
+  key:text('key').primaryKey(), attempts:integer('attempts').notNull().default(0),nextAttempt:integer('next_attempt').notNull().default(0),
+}, t=>[index('object_deletions_due').on(t.nextAttempt)]);

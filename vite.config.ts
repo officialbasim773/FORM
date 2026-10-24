@@ -1,4 +1,5 @@
 import vinext from "vinext";
+import { productionConfig } from "./scripts/production-config.mjs";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
@@ -13,7 +14,8 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
 
 const localBindingConfig = {
-  main: "vinext/server/fetch-handler",
+  main: "./worker.ts",
+  compatibility_date: "2026-10-23",
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
@@ -59,7 +61,7 @@ export default defineConfig(async () => {
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
-        config: localBindingConfig,
+        config: { ...localBindingConfig, ...(process.env.FORMCHAT_DEPLOY === "production" ? productionConfig() : {}) },
       }),
     ],
   };

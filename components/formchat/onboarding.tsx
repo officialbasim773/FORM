@@ -38,11 +38,12 @@ export default function Onboarding({
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
       if (saved) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
         setName(saved.name || "");
         setPhone(saved.phone || "");
       }
     } catch {}
-  }, [storageKey]);
+  }, [storageKey, initial]);
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify({ name, phone }));

@@ -1,3 +1,4 @@
+import type { StoredBooking } from "./records";
 import { z } from "zod";
 import {
   appointmentConfigSchema,
@@ -6,17 +7,16 @@ import {
   dateSchema,
   defaultAppointments,
   localDate,
-  type AppointmentConfig,
   type BookingChoice,
 } from "./appointments";
 import { body, db, HttpError, json } from "./server";
-import type { Business, Draft } from "./model";
+import type { Business } from "./model";
 
 export async function appointmentSettings(businessId: string) {
   const row = await db()
     .prepare("SELECT * FROM appointment_settings WHERE business_id=?")
     .bind(businessId)
-    .first<any>();
+    .first<{enabled:number;revision:number;config:string}>();
   return {
     enabled: !!row?.enabled,
     revision: row?.revision ?? -1,
@@ -180,7 +180,7 @@ export async function appointmentsApi(
         "SELECT id,customer_id,status,service_id,provider_id,start,end,timezone,revision,details,created_at,updated_at FROM bookings WHERE id=? AND business_id=?",
       )
       .bind(path[1], business.id)
-      .first<any>();
+      .first<StoredBooking>();
     if (!row) throw new HttpError(404, "Booking not found.");
     const activity = await db()
       .prepare(
@@ -274,7 +274,7 @@ export async function appointmentsApi(
           "SELECT id,customer_id,service_id,provider_id,start,end,timezone,status,revision,details,created_at FROM bookings WHERE business_id=? AND status='pending' ORDER BY created_at LIMIT 501",
         )
         .bind(business.id)
-        .all<any>();
+        .all<StoredBooking>();
       if (rows.results.length > 500)
         throw new HttpError(
           400,
@@ -301,7 +301,7 @@ export async function appointmentsApi(
         new Date(Date.parse(from) - 86400000).toISOString(),
         new Date(Date.parse(to) + 2 * 86400000).toISOString(),
       )
-      .all<any>();
+      .all<StoredBooking>();
     if (result.results.length > 500)
       throw new HttpError(400, "Choose a smaller date range.");
     return json({
@@ -318,7 +318,7 @@ export async function appointmentsApi(
     const booking = await db()
       .prepare("SELECT * FROM bookings WHERE id=? AND business_id=?")
       .bind(path[1], business.id)
-      .first<any>();
+      .first<StoredBooking>();
     if (!booking) throw new HttpError(404, "Booking not found.");
     const x = z
       .object({

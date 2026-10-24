@@ -8,8 +8,6 @@ import {
   ArrowUpRight,
   ArrowRight,
   MoreHorizontal,
-  Copy,
-  Pause,
   Link2,
   MessageCircle,
   Package,

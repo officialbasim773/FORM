@@ -24,7 +24,6 @@ import {
   LayoutTemplate,
   CircleCheck,
   ChevronRight,
-  Plus,
 } from "lucide-react";
 
 const features = [

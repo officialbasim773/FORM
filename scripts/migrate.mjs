@@ -1,8 +1,25 @@
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import {
+  readdirSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  unlinkSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 if (!existsSync("dist/server/wrangler.json"))
   throw new Error("Run npm run build before applying local migrations.");
+const remote = process.argv.includes("--remote");
+const config = JSON.parse(readFileSync("dist/server/wrangler.json", "utf8"));
+if (
+  remote &&
+  (config.vars?.APP_ENV !== "production" ||
+    /^00000000-/.test(config.d1_databases?.[0]?.database_id || "00000000-"))
+)
+  throw Error(
+    "Build a provisioned production configuration before remote migration.",
+  );
 const base = [
   "--import",
   "./scripts/sites-env.mjs",
@@ -10,11 +27,12 @@ const base = [
   "d1",
   "execute",
   "DB",
-  "--local",
+  remote ? "--remote" : "--local",
   "--config",
   "dist/server/wrangler.json",
-  "--persist-to",
-  ".wrangler/state",
+  ...(!remote
+    ? ["--persist-to", process.env.FORMCHAT_STATE_DIR || ".wrangler/state"]
+    : []),
 ];
 function run(extra, json = false) {
   const r = spawnSync(
@@ -47,11 +65,23 @@ for (const name of readdirSync("drizzle")
       );
     continue;
   }
-  run(["--file", "drizzle/" + name]);
-  run([
-    "--command",
-    `INSERT INTO _formchat_migrations(name,sha256) VALUES('${name}','${digest}')`,
-  ]);
+  mkdirSync(".sites-runtime", { recursive: true });
+  const staged = `.sites-runtime/migration-${process.pid}.sql`;
+  // D1 executes the migration and its receipt in the same file transaction.
+  writeFileSync(
+    staged,
+    readFileSync("drizzle/" + name, "utf8") +
+      `
+INSERT INTO _formchat_migrations(name,sha256) VALUES('${name}','${digest}');
+`,
+  );
+  try {
+    run(["--file", staged]);
+  } finally {
+    unlinkSync(staged);
+  }
   console.log("Applied " + name);
 }
-console.log("Local database migrations are up to date.");
+console.log(
+  `${remote ? "Production" : "Local"} database migrations are up to date.`,
+);

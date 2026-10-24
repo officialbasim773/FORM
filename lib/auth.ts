@@ -1,3 +1,4 @@
+import { authRateStorage } from "./auth-rate-limit";
 import { env } from "cloudflare:workers";
 import { createEmailSender, dash } from "@better-auth/infra";
 import { betterAuth } from "better-auth";
@@ -16,6 +17,17 @@ export const auth = betterAuth({
   }),
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
+  advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
+  rateLimit: {
+    enabled: true,
+    customStorage: authRateStorage(env.DB),
+    customRules: {
+      "/sign-in/email": {window:60,max:10},
+      "/sign-up/email": {window:60,max:5},
+      "/request-password-reset": {window:60,max:3},
+      "/send-verification-email": {window:60,max:3},
+    },
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,

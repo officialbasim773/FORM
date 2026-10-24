@@ -1,6 +1,8 @@
+import { sessionFixtures } from "./session-fixtures.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-const base = process.env.TEST_URL || "http://127.0.0.1:5174";
+const base = process.env.TEST_URL || "http://localhost:5174";
+const session = sessionFixtures(base);
 if (!["localhost", "127.0.0.1"].includes(new URL(base).hostname))
   throw new Error("Local tests only");
 let checks = 0;
@@ -13,12 +15,13 @@ async function req(
     headers: {
       ...(user
         ? {
-            "oai-authenticated-user-id": user,
-            "oai-authenticated-user-email": user + "@example.test",
+            cookie: (await session(user)).cookie,
           }
         : {}),
       ...(data ? { "content-type": "application/json" } : {}),
-      ...(cookie ? { cookie } : {}),
+      ...(cookie
+        ? { cookie: (user ? (await session(user)).cookie + "; " : "") + cookie }
+        : {}),
     },
     body: data ? JSON.stringify(data) : undefined,
   });
@@ -48,7 +51,7 @@ try {
     req("team", {
       user: owner,
       method: "POST",
-      data: { name, email: user + "@example.test", phone },
+      data: { name, email: (await session(user)).email, phone },
       status: 201,
     });
   const ia = await invite(a, "Alex", "+971500000001"),

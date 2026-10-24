@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import { useState } from "react";
 import { ImagePlus, Plus, Trash2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +23,14 @@ function ChoiceImage({
     <div className="choice-image-upload">
       <label>
         {src ? (
-          <img src={src} alt={label} style={{ objectFit: fit }} />
+          <NextImage
+            unoptimized
+            width={1200}
+            height={800}
+            src={src}
+            alt={label}
+            style={{ objectFit: fit }}
+          />
         ) : (
           <span>
             <ImagePlus size={26} />

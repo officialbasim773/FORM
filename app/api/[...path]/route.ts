@@ -1,3 +1,6 @@
+import type { StoredForm } from "@/lib/records";
+import { retryObjectDeletions } from "@/lib/object-cleanup";
+import { responsePage, responseExport } from "@/lib/response-pagination";
 import { appointmentsApi } from "@/lib/appointments-server";
 import { publicBookingApi } from "@/lib/booking-server";
 import {
@@ -28,8 +31,6 @@ import {
   validateAnswers,
   formatMessage,
   Business,
-  Receipt,
-  FormRecord,
   Draft,
 } from "@/lib/model";
 import { PLANS } from "@/lib/config";
@@ -37,7 +38,7 @@ import { template } from "@/lib/templates";
 export const dynamic = "force-dynamic";
 const now = () => new Date().toISOString();
 const uuid = () => crypto.randomUUID();
-const decodeForm = (f: any) => ({
+const decodeForm = (f: StoredForm) => ({
   ...f,
   draft: JSON.parse(f.draft),
   published: f.published ? JSON.parse(f.published) : null,
@@ -46,7 +47,7 @@ async function ownedForm(id: string, b: Business) {
   const f = await db()
     .prepare("SELECT * FROM forms WHERE id=? AND business_id=? AND deleted=0")
     .bind(id, b.id)
-    .first<any>();
+    .first<StoredForm>();
   if (!f) throw new HttpError(404, "Form not found.");
   return f;
 }
@@ -201,11 +202,8 @@ async function handle(req: Request) {
     });
   }
   if (p[0] === "business" && method === "DELETE") {
-    const list = await db()
-      .prepare("SELECT id FROM uploads WHERE business_id=?")
-      .bind(b.id)
-      .all<{ id: string }>();
     await db().batch([
+      db().prepare("INSERT OR IGNORE INTO object_deletions(key) SELECT id FROM uploads WHERE business_id=?").bind(b.id),
       db().prepare("DELETE FROM bookings WHERE business_id=?").bind(b.id),
       db()
         .prepare("DELETE FROM appointment_customers WHERE business_id=?")
@@ -231,8 +229,8 @@ async function handle(req: Request) {
       db().prepare("DELETE FROM uploads WHERE business_id=?").bind(b.id),
       db().prepare("DELETE FROM businesses WHERE id=?").bind(b.id),
     ]);
-    if (list.results.length)
-      await bucket().delete(list.results.map((u) => u.id));
+    try { await retryObjectDeletions(db(), bucket()); }
+    catch { console.error(JSON.stringify({event:"object_cleanup_deferred"})); }
     return json({ ok: true });
   }
   if (p[0] === "upload" && method === "POST") {
@@ -261,16 +259,21 @@ async function handle(req: Request) {
     if (!mime)
       throw new HttpError(400, "Only PNG, JPEG and WebP images are supported.");
     const id = uuid();
+    // Stage compensation before touching R2 so crashes and failed DB writes
+    // cannot strand an object without a durable retry record.
+    await db().prepare('INSERT INTO object_deletions(key,next_attempt) VALUES(?,?)').bind(id,Date.now()+15*60*1000).run();
     await bucket().put(id, bytes, { httpMetadata: { contentType: mime } });
     try {
-      await db()
+      await db().batch([db()
         .prepare(
           "INSERT INTO uploads(id,business_id,mime,size) VALUES(?,?,?,?)",
         )
-        .bind(id, b.id, mime, bytes.length)
-        .run();
+        .bind(id, b.id, mime, bytes.length),
+        db().prepare('DELETE FROM object_deletions WHERE key=?').bind(id),
+      ]);
     } catch (e) {
-      await bucket().delete(id);
+      try { await bucket().delete(id); }
+      catch { console.error(JSON.stringify({event:'upload_cleanup_deferred'})); }
       throw e;
     }
     return json({ url: `/api/images/${id}` });
@@ -282,7 +285,7 @@ async function handle(req: Request) {
           "SELECT f.*,(SELECT count(*) FROM submissions s WHERE s.form_id=f.id) submissions FROM forms f WHERE business_id=? AND deleted=0 ORDER BY updated_at DESC",
         )
         .bind(b.id)
-        .all();
+        .all<StoredForm>();
       const usage = await db()
         .prepare(
           "SELECT COALESCE((SELECT count FROM usage WHERE business_id=? AND month=?),0) n",
@@ -579,10 +582,10 @@ async function handle(req: Request) {
       return json({ ok: true });
     }
     const filters = ["s.business_id=?"];
-    const args: any[] = [b.id];
+    const args: (string | number | null)[] = [b.id];
     if (b.role === "member") {
       filters.push("s.assigned_to=?");
-      args.push(b.memberId);
+      args.push(b.memberId || null);
     }
     const assigned = url.searchParams.get("assigned");
     if (assigned === "owner") filters.push("s.assigned_to IS NULL");
@@ -623,76 +626,13 @@ async function handle(req: Request) {
     const handoff = url.searchParams.get("handoff");
     if (handoff === "yes") filters.push("s.handoff_at IS NOT NULL");
     if (handoff === "no") filters.push("s.handoff_at IS NULL");
-    const rows = await db()
-      .prepare(
-        `SELECT s.*,f.deleted form_deleted,m.name assigned_name,m.status assigned_status,bk.id booking_id,bk.start booking_start,bk.timezone booking_timezone,bk.status booking_status FROM submissions s JOIN forms f ON s.form_id=f.id LEFT JOIN members m ON m.id=s.assigned_to LEFT JOIN bookings bk ON bk.submission_id=s.id WHERE ${filters.join(" AND ")} ORDER BY s.created_at DESC LIMIT 5000`,
-      )
-      .bind(...args)
-      .all<any>();
     if (p[1] === "export") {
-      if (!plan.csv)
-        throw new HttpError(403, "CSV export is included in Business.");
-      const cell = (v: unknown) =>
-        '"' +
-        String(v ?? "")
-          .replace(/^[\s]*[=+@-]/, (m) => "'" + m)
-          .replaceAll('"', '""') +
-        '"';
-      const lines = [
-        [
-          "Reference",
-          "Form",
-          "Type",
-          "Customer",
-          "Submitted at",
-          "Estimated total (minor units)",
-          "Currency",
-          "WhatsApp handoff clicked at",
-          "Answers",
-          "Products",
-          "Status",
-          "Internal notes",
-        ],
-        ...rows.results.map((r) => {
-          const x = JSON.parse(r.receipt);
-          return [
-            r.id,
-            x.formTitle,
-            x.formType,
-            r.customer,
-            r.created_at,
-            r.total,
-            x.currency,
-            r.handoff_at || "",
-            JSON.stringify(x.answers),
-            JSON.stringify(x.items),
-            r.workflow_status,
-            r.internal_notes,
-          ];
-        }),
-      ];
-      return new Response(
-        "\uFEFF" + lines.map((l) => l.map(cell).join(",")).join("\r\n"),
-        {
-          headers: {
-            "Content-Type": "text/csv;charset=utf-8",
-            "Content-Disposition":
-              'attachment; filename="formchat-responses.csv"',
-            "Cache-Control": "no-store",
-          },
-        },
-      );
+      if (!plan.csv) throw new HttpError(403, "CSV export is included in Business.");
+      return responseExport(filters, args);
     }
-    return json({
-      responses: rows.results.map(
-        ({ token_hash, payload_hash, idempotency, ...r }) => ({
-          ...r,
-          receipt: JSON.parse(r.receipt),
-          snapshot: JSON.parse(r.snapshot),
-        }),
-      ),
-    });
+    return json(await responsePage(filters, args, url.searchParams));
   }
+
   if (p[0] === "analytics" && method === "GET") {
     if (!plan.analytics)
       throw new HttpError(403, "Detailed analytics are included in Business.");
@@ -708,19 +648,19 @@ async function handle(req: Request) {
         `SELECT kind,count(DISTINCT form_id || ':' || visitor) n FROM events WHERE business_id=? AND created_at>=?${extra} GROUP BY kind`,
       )
       .bind(...args)
-      .all<any>();
+      .all<{kind:string;n:number}>();
     const sub = await db()
       .prepare(
         `SELECT count(*) n,sum(CASE WHEN handoff_at IS NOT NULL THEN 1 ELSE 0 END) handoffs FROM submissions WHERE business_id=? AND created_at>=?${extra}`,
       )
       .bind(...args)
-      .first<any>();
+      .first<{n:number;handoffs:number}>();
     const trend = await db()
       .prepare(
         `SELECT substr(created_at,1,10) day,count(*) n FROM submissions WHERE business_id=? AND created_at>=?${extra} GROUP BY day`,
       )
       .bind(...args)
-      .all<any>();
+      .all<{day:string;n:number}>();
     const eventTrend = await db()
       .prepare(
         `SELECT substr(created_at,1,10) day,kind,count(*) n FROM events WHERE business_id=? AND created_at>=?${extra} GROUP BY day,kind`,
@@ -732,7 +672,7 @@ async function handle(req: Request) {
         "SELECT f.id,f.draft,f.deleted,count(s.id) n FROM forms f LEFT JOIN submissions s ON f.id=s.form_id AND s.created_at>=? WHERE f.business_id=? GROUP BY f.id ORDER BY n DESC LIMIT 5",
       )
       .bind(args[1], b.id)
-      .all<any>();
+      .all<{id:string;draft:string;deleted:number;n:number}>();
     return json({
       events: Object.fromEntries(ev.results.map((e) => [e.kind, e.n])),
       submissions: sub?.n || 0,
@@ -757,7 +697,7 @@ async function publicApi(req: Request, p: string[]) {
       "SELECT f.*,b.name,b.phone,b.logo,b.plan,b.id tenant FROM forms f JOIN businesses b ON f.business_id=b.id WHERE f.slug=?",
     )
     .bind(p[0])
-    .first<any>();
+    .first<StoredForm & {name:string;phone:string;logo:string;plan:Business["plan"];tenant:string}>();
   if (
     !f ||
     ((f.deleted || f.status !== "published" || !f.published) &&
@@ -767,7 +707,7 @@ async function publicApi(req: Request, p: string[]) {
       404,
       "This form is not accepting requests right now. Please contact the business directly.",
     );
-  const draft: Draft = JSON.parse(f.published);
+  const draft: Draft = JSON.parse(f.published || f.draft);
   if (["appointments", "slots"].includes(p[1]))
     throw new HttpError(404, "Use the separate appointment booking page.");
   if (req.method === "GET")
@@ -853,7 +793,7 @@ async function publicApi(req: Request, p: string[]) {
         "SELECT receipt,payload_hash,token_hash FROM submissions WHERE form_id=? AND idempotency=?",
       )
       .bind(f.id, x.idempotency)
-      .first<any>();
+      .first<{receipt:string;payload_hash:string;token_hash:string}>();
     if (old) {
       if (
         old.payload_hash !== payloadHash ||
@@ -934,7 +874,7 @@ async function publicApi(req: Request, p: string[]) {
           "SELECT receipt,payload_hash,token_hash FROM submissions WHERE form_id=? AND idempotency=?",
         )
         .bind(f.id, x.idempotency)
-        .first<any>();
+        .first<{receipt:string;payload_hash:string;token_hash:string}>();
       if (
         saved &&
         saved.payload_hash === payloadHash &&

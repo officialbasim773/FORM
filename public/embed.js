@@ -5,7 +5,7 @@
   try {
     service = new URL(script.src).origin;
     if (!/^https?:\/\//.test(service)) return;
-  } catch (_) {
+  } catch {
     return;
   }
   var loaders =
@@ -39,7 +39,7 @@
         var url;
         try {
           url = new URL(frame.getAttribute("src"), location.href);
-        } catch (_) {
+        } catch {
           return;
         }
         var match = url.pathname.match(/^\/(f|book)\/([\w-]{1,80})$/);

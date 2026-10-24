@@ -1,3 +1,5 @@
+import type { StoredBooking } from "./records";
+import type { Business } from "./model";
 import { z } from "zod";
 import { body, db, hash, HttpError, json, limited } from "./server";
 import {
@@ -52,7 +54,7 @@ export async function publicBookingApi(
       "SELECT id,name,phone,logo,accent,button FROM businesses WHERE id=?",
     )
     .bind(path[0] || "")
-    .first<any>();
+    .first<Business>();
   if (!business) throw new HttpError(404, "This booking page is unavailable.");
   if (req.method === "POST" && path[1] === "status") {
     const x = z
@@ -64,7 +66,7 @@ export async function publicBookingApi(
         "SELECT id,status,start,end,timezone,details,confirmation FROM bookings WHERE id=? AND business_id=? AND token_hash=?",
       )
       .bind(x.id, business.id, await hash(x.token))
-      .first<any>();
+      .first<StoredBooking>();
     if (!row) throw new HttpError(404, "Booking not found.");
     const details = JSON.parse(row.details);
     return json({
@@ -172,7 +174,7 @@ export async function publicBookingApi(
           "SELECT payload_hash,token_hash,confirmation FROM bookings WHERE business_id=? AND idempotency=?",
         )
         .bind(business.id, x.idempotency)
-        .first<any>();
+        .first<StoredBooking>();
       if (!row) return null;
       if (row.payload_hash !== payloadHash || row.token_hash !== tokenHash)
         throw new HttpError(

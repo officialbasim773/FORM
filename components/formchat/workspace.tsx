@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import { useEffect, useState } from "react";
 import {
   FileText,
@@ -31,7 +32,7 @@ import { Business, FormRecord } from "@/lib/model";
 import { PRODUCT_NAME, PLANS } from "@/lib/config";
 import { api } from "@/lib/client";
 import { Modal, Loading } from "./ui";
-import Builder, { Share } from "./builder";
+import Builder from "./builder";
 import Brand from "./brand";
 import NewForm from "./new-form";
 import Onboarding from "./onboarding";
@@ -115,7 +116,23 @@ export default function Workspace() {
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => {
-    const context = (document as any).modelContext;
+    const context = (
+      document as Document & {
+        modelContext?: {
+          registerTool: (
+            tool: {
+              name: string;
+              title: string;
+              description: string;
+              inputSchema: unknown;
+              annotations: unknown;
+              execute: (input: unknown) => unknown;
+            },
+            options: { signal: AbortSignal },
+          ) => unknown;
+        };
+      }
+    ).modelContext;
     if (!context?.registerTool) return;
     const lifecycle = new AbortController();
     Promise.resolve(
@@ -131,7 +148,7 @@ export default function Workspace() {
             additionalProperties: false,
           },
           annotations: { readOnlyHint: false },
-          execute: (input: any) => {
+          execute: (input: unknown) => {
             if (
               !input ||
               typeof input !== "object" ||
@@ -228,7 +245,13 @@ export default function Workspace() {
         <div className="business-switch">
           <span className="workspace-avatar">
             {business.logo ? (
-              <img src={business.logo} alt="" />
+              <NextImage
+                unoptimized
+                width={96}
+                height={96}
+                src={business.logo}
+                alt=""
+              />
             ) : (
               business.name.slice(0, 1)
             )}

@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import {
   FileText,
   Plus,
@@ -57,7 +58,13 @@ function Answer({ q }: { q: Question }) {
         {options.slice(0, 6).map((o) => (
           <span key={o}>
             {q.optionImages?.[o] && q.choiceStyle !== "text" && (
-              <img src={q.optionImages[o]} alt="" />
+              <NextImage
+                unoptimized
+                width={1200}
+                height={800}
+                src={q.optionImages[o]}
+                alt=""
+              />
             )}
             {q.type === "rating" ? (
               <Star size={15} />
@@ -165,7 +172,10 @@ export default function FormCanvas({
               </strong>
               {q.description && <p>{q.description}</p>}
               {q.media?.src && (
-                <img
+                <NextImage
+                  unoptimized
+                  width={1200}
+                  height={800}
                   className="canvas-media"
                   src={q.media.src}
                   alt={q.media.alt}

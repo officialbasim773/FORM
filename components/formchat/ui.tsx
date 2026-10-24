@@ -1,4 +1,5 @@
 "use client";
+import NextImage from "next/image";
 import { ReactNode } from "react";
 import {
   Select,
@@ -158,7 +159,15 @@ export function ImagePicker({
   const [busy, setBusy] = useState(false);
   return (
     <div className="image-picker">
-      {value && <img src={value} alt="Uploaded business image" />}
+      {value && (
+        <NextImage
+          unoptimized
+          width={1200}
+          height={800}
+          src={value}
+          alt="Uploaded business image"
+        />
+      )}
       <label className="btn">
         <Upload size={15} />
         {busy ? "Uploading…" : label}

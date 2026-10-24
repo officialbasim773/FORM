@@ -1,6 +1,15 @@
 "use client";
+import type {
+  AppointmentCustomer,
+  CustomerProfile,
+  Booking,
+  BookingProfile,
+  AppointmentSettings,
+  BookingRequest,
+  AvailableSlot,
+} from "@/lib/records";
 import { readApiResponse } from "@/lib/api-response";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
 import { formatAppointment } from "@/lib/appointments";
 import { money } from "@/lib/model";
@@ -10,11 +19,13 @@ export function Customers({
   onBook,
 }: {
   id?: string;
-  onBook: (customer: any) => void;
+  onBook: (customer: AppointmentCustomer) => void;
 }) {
-  const [rows, setRows] = useState<any[]>([]),
-    [profile, setProfile] = useState<any>(null),
-    [draft, setDraft] = useState<any>(null),
+  const [rows, setRows] = useState<AppointmentCustomer[]>([]),
+    [profile, setProfile] = useState<CustomerProfile | null>(null),
+    [draft, setDraft] = useState<(typeof empty & { revision?: number }) | null>(
+      null,
+    ),
     [search, setSearch] = useState(""),
     [archived, setArchived] = useState(false),
     [error, setError] = useState(""),
@@ -23,6 +34,7 @@ export function Customers({
     [truncated, setTruncated] = useState(false);
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setProfile(null);
     setDraft(null);
     setError("");
@@ -52,12 +64,12 @@ export function Customers({
     setError("");
     try {
       const input = {
-        name: draft.name,
-        email: draft.email,
-        phone: draft.phone,
-        notes: draft.notes,
-        archived: draft.archived,
-        ...(id ? { revision: draft.revision } : {}),
+        name: draft!.name,
+        email: draft!.email,
+        phone: draft!.phone,
+        notes: draft!.notes,
+        archived: draft!.archived,
+        ...(id ? { revision: draft!.revision } : {}),
       };
       const r = await api(
         `appointments/customers${id ? `/${id}` : ""}`,
@@ -87,7 +99,7 @@ export function Customers({
             <button
               className="btn primary"
               disabled={!profile || !!profile.customer.archived}
-              onClick={() => onBook(profile.customer)}
+              onClick={() => profile && onBook(profile.customer)}
             >
               Add booking
             </button>
@@ -153,7 +165,7 @@ export function Customers({
         <form className="panel customer-edit" onSubmit={save}>
           <h3>{id ? "Customer details" : "New customer"}</h3>
           <div className="customer-fields">
-            {["name", "email", "phone"].map((key) => (
+            {(["name", "email", "phone"] as const).map((key) => (
               <label key={key}>
                 {key === "phone" ? "Phone with country code" : key}
                 <input
@@ -173,7 +185,7 @@ export function Customers({
             <textarea
               maxLength={5000}
               rows={4}
-              value={draft.notes}
+              value={draft!.notes}
               onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
             />
           </label>
@@ -185,7 +197,7 @@ export function Customers({
             <label>
               <input
                 type="checkbox"
-                checked={draft.archived}
+                checked={draft!.archived}
                 onChange={(e) =>
                   setDraft({ ...draft, archived: e.target.checked })
                 }
@@ -213,7 +225,7 @@ export function Customers({
         <section>
           <h3>Appointment history</h3>
           <div className="booking-list">
-            {profile.bookings.map((b: any) => (
+            {profile.bookings.map((b: Booking) => (
               <a
                 className="customer-history-row"
                 href={`#appointments/booking/${b.id}`}
@@ -241,8 +253,8 @@ export function ManualBooking({
   onDone,
   onClose,
 }: {
-  settings: any;
-  customer?: any;
+  settings: AppointmentSettings;
+  customer?: AppointmentCustomer | null;
   onDone: (id: string) => void;
   onClose: () => void;
 }) {
@@ -250,14 +262,15 @@ export function ManualBooking({
     [provider, setProvider] = useState(""),
     [date, setDate] = useState(""),
     [start, setStart] = useState(""),
-    [slots, setSlots] = useState<any[]>([]),
+    [slots, setSlots] = useState<AvailableSlot[]>([]),
     [contact, setContact] = useState({ ...empty, ...customer, notes: "" }),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const pending = useRef<any>(null);
-  const selected = settings.config.services.find((s: any) => s.id === service);
+  const [pending, setPending] = useState<BookingRequest | null>(null);
+  const selected = settings.config.services.find((s) => s.id === service);
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setSlots([]);
     setStart("");
     if (service && provider && date)
@@ -274,7 +287,7 @@ export function ManualBooking({
     e.preventDefault();
     setBusy(true);
     setError("");
-    const input = pending.current || {
+    const input = pending || {
       appointment: { serviceId: service, providerId: provider, start },
       customer: {
         name: contact.name,
@@ -287,23 +300,23 @@ export function ManualBooking({
       startedAt: Date.now() - 5000,
       website: "",
     };
-    pending.current = input;
+    setPending(input);
     try {
       const response = await fetch("/api/appointments/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const r: any = await (async () => {
+      const r: { id: string; error?: string } = await (async () => {
         try {
           return await readApiResponse(response);
         } catch (e) {
-          if (!response.ok) return { error: (e as Error).message };
+          if (!response.ok) return { id: "", error: (e as Error).message };
           throw e;
         }
       })();
       if (!response.ok) {
-        if (response.status < 500) pending.current = null;
+        if (response.status < 500) setPending(null);
         throw new Error(r.error || "Unable to save booking.");
       }
       onDone(r.id);
@@ -332,10 +345,7 @@ export function ManualBooking({
           {error}
         </p>
       )}
-      <fieldset
-        disabled={busy || !!pending.current}
-        className="customer-fields"
-      >
+      <fieldset disabled={busy || !!pending} className="customer-fields">
         <label>
           Service
           <select
@@ -348,8 +358,8 @@ export function ManualBooking({
           >
             <option value="">Choose service</option>
             {settings.config.services
-              .filter((s: any) => s.active !== false)
-              .map((s: any) => (
+              .filter((s) => s.active !== false)
+              .map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
@@ -365,8 +375,8 @@ export function ManualBooking({
           >
             <option value="">Choose team member</option>
             {settings.team
-              .filter((p: any) => selected?.providerIds.includes(p.id))
-              .map((p: any) => (
+              .filter((p) => selected?.providerIds.includes(p.id))
+              .map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -397,13 +407,13 @@ export function ManualBooking({
             ))}
           </select>
         </label>
-        {["name", "email", "phone"].map((k) => (
+        {(["name", "email", "phone"] as const).map((k) => (
           <label key={k}>
             {k}
             <input
               required
               type={k === "email" ? "email" : "text"}
-              value={(contact as any)[k]}
+              value={contact[k]}
               onChange={(e) => setContact({ ...contact, [k]: e.target.value })}
             />
           </label>
@@ -417,13 +427,10 @@ export function ManualBooking({
           />
         </label>
       </fieldset>
-      <button
-        className="btn primary"
-        disabled={busy || (!start && !pending.current)}
-      >
+      <button className="btn primary" disabled={busy || (!start && !pending)}>
         {busy
           ? "Saving…"
-          : pending.current
+          : pending
             ? "Retry original booking"
             : "Create appointment"}
       </button>
@@ -439,14 +446,15 @@ export function BookingDetail({
   onReschedule,
 }: {
   id: string;
-  onReschedule: (booking: any) => void;
+  onReschedule: (booking: Booking) => void;
 }) {
-  const [data, setData] = useState<any>(null),
+  const [data, setData] = useState<BookingProfile | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [refresh, setRefresh] = useState(0);
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setData(null);
     api(`appointments/bookings/${id}`)
       .then((r) => active && setData(r))
@@ -461,6 +469,7 @@ export function BookingDetail({
       !window.confirm("Close this appointment and release its time?")
     )
       return;
+    if (!data) return;
     setBusy(true);
     setError("");
     try {
@@ -557,7 +566,7 @@ export function BookingDetail({
       <section className="panel customer-edit">
         <h3>Activity</h3>
         {data.activity.length ? (
-          data.activity.map((a: any, i: number) => (
+          data.activity.map((a, i: number) => (
             <div className="booking-activity" key={i}>
               <strong>{a.action.replace("_", " ")}</strong>
               <span>{formatAppointment(a.created_at, b.timezone)}</span>

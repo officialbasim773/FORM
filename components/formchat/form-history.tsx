@@ -26,6 +26,7 @@ export default function FormHistory({
   const [reload, setReload] = useState(0);
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize browser/API lifecycle state and clear stale data before loading the new resource.
     setLoading(true);
     api(`forms/${form.id}/versions`)
       .then((r) => {

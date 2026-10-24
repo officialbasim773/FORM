@@ -46,6 +46,7 @@ export async function localAuth(base) {
       headers: {
         "content-type": "application/json",
         origin: new URL(base).origin,
+        "cf-connecting-ip": "2001:db8:" + randomBytes(2).toString("hex") + "::1",
       },
       body: JSON.stringify({ email, password }),
     });
@@ -56,7 +57,7 @@ export async function localAuth(base) {
       .map((c) => c.split(";")[0])
       .join("; ");
     if (!cookie) throw Error("Local test sign-in returned no session.");
-    return { cookie, cleanup };
+    return { cookie, cleanup, email, userId: id };
   } catch (e) {
     cleanup();
     throw e;
