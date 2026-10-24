@@ -64,7 +64,7 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.64.0",
@@ -97,7 +97,7 @@
       "esbuild": "0.28.2"
     },
     "baseline-browser-mapping": "2.11.0",
-    "fast-uri": "3.1.8",
+    "fast-uri": "3.1.9",
     "esbuild": "$esbuild",
     "fflate": "^0.7.5"
   }
